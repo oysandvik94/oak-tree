@@ -1,0 +1,27 @@
+# Go build/test output
+/oak-tree
+/bin/
+/build/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Local environment and tool state
+.env
+.env.*
+.direnv/
+.pi-subagents/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Editor and OS metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
