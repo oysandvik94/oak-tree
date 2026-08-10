@@ -49,6 +49,8 @@ type Session struct {
 	AgentStatus          AgentStatus  `json:"agent_status,omitempty"`
 	AgentStatusUpdatedAt *time.Time   `json:"agent_status_updated_at,omitempty"`
 	Tag                  SessionTag   `json:"tag,omitempty"`
+	TagUpdatedAt         *time.Time   `json:"tag_updated_at,omitempty"`
+	Note                 string       `json:"note,omitempty"`
 	Todo                 *TodoSummary `json:"todo,omitempty"`
 	SubagentCount        int          `json:"subagent_count,omitempty"`
 	GitStatus            *GitStatus   `json:"-"`

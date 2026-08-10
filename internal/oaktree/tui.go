@@ -55,6 +55,11 @@ type tagUpdateMsg struct {
 	err     error
 }
 
+type noteUpdateMsg struct {
+	session Session
+	err     error
+}
+
 type usageCacheMsg struct {
 	state UsageCacheState
 	err   error
@@ -94,6 +99,7 @@ const (
 	modeCreate
 	modeConfirmClose
 	modeTagPicker
+	modeNoteEditor
 )
 
 type tagOption struct {
@@ -485,6 +491,8 @@ type DashboardModel struct {
 	confirmClose       bool
 	tagCursor          int
 	tagUpdating        bool
+	noteInput          textinput.Model
+	noteUpdating       bool
 	creating           bool
 	attaching          bool
 	closing            bool
@@ -514,6 +522,7 @@ func NewDashboardModel(svc *Service, cfg Config) DashboardModel {
 		svc:            svc,
 		mode:           modeDashboard,
 		form:           newCreateForm(rootCandidates, 80, 24),
+		noteInput:      newCreateInput("note> ", "why is this parked?"),
 		rootCandidates: rootCandidates,
 		help:           helpModel,
 		status:         "ready",
@@ -607,6 +616,13 @@ func (m DashboardModel) tagUpdateCmd(session Session, tag SessionTag) tea.Cmd {
 	return func() tea.Msg {
 		updated, err := m.svc.SetSessionTag(context.Background(), session.ID, tag)
 		return tagUpdateMsg{session: updated, err: err}
+	}
+}
+
+func (m DashboardModel) noteUpdateCmd(session Session, note string) tea.Cmd {
+	return func() tea.Msg {
+		updated, err := m.svc.SetSessionNote(context.Background(), session.ID, note)
+		return noteUpdateMsg{session: updated, err: err}
 	}
 }
 
@@ -873,6 +889,8 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		if m.mode == modeCreate {
 			m.form.syncLayout(msg.Width, msg.Height)
+		} else if m.mode == modeNoteEditor {
+			m.noteInput.SetWidth(max(12, min(msg.Width, 100)-4))
 		}
 		return m, nil
 	case dashboardMsg:
@@ -1033,6 +1051,23 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.withSelected(msg.session.ID)
 		m.status = "marked " + sessionTagLabel(msg.session.Tag)
 		return m, nil
+	case noteUpdateMsg:
+		m.noteUpdating = false
+		if msg.err != nil {
+			m.err = msg.err
+			m.status = "note update failed"
+			return m, m.noteInput.Focus()
+		}
+		m.err = nil
+		m.mode = modeDashboard
+		for i := range m.sessions {
+			if m.sessions[i].ID == msg.session.ID {
+				m.sessions[i] = sessionWithPreservedTransient(m.sessions[i], msg.session)
+				break
+			}
+		}
+		m.status = "note saved"
+		return m, nil
 	case usageCacheMsg:
 		if msg.err != nil {
 			m.usageErr = msg.err
@@ -1077,6 +1112,8 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateCreate(msg)
 		case modeTagPicker:
 			return m.updateTagPicker(msg)
+		case modeNoteEditor:
+			return m.updateNoteEditor(msg)
 		default:
 			return m.updateDashboard(msg)
 		}
@@ -1124,6 +1161,17 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.err = nil
 			m.status = "session status"
 			return m.withAnimationCmd()
+		}
+		return m, nil
+	case "e":
+		if sel := m.currentSession(); sel != nil {
+			m.mode = modeNoteEditor
+			m.noteInput.SetValue(sel.Note)
+			m.noteInput.SetWidth(max(12, min(m.width, 100)-4))
+			m.noteInput.CursorEnd()
+			m.err = nil
+			m.status = "edit note"
+			return m, m.noteInput.Focus()
 		}
 		return m, nil
 	case "v":
@@ -1243,6 +1291,29 @@ func (m DashboardModel) updateTagPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m DashboardModel) updateNoteEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = modeDashboard
+		m.noteInput.Blur()
+		m.status = "cancelled"
+		m.err = nil
+		return m, nil
+	case "enter":
+		if sel := m.currentSession(); sel != nil && !m.noteUpdating {
+			m.noteUpdating = true
+			m.noteInput.Blur()
+			m.status = "saving note"
+			return m, m.noteUpdateCmd(*sel, m.noteInput.Value())
+		}
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.noteInput, cmd = m.noteInput.Update(msg)
+	m.err = nil
+	return m, cmd
+}
+
 func (m DashboardModel) updateCreate(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -1331,6 +1402,10 @@ func (m DashboardModel) View() tea.View {
 	if m.mode == modeTagPicker {
 		tagView = m.renderTagPicker(contentWidth)
 	}
+	noteView := ""
+	if m.mode == modeNoteEditor {
+		noteView = m.renderNoteEditor(contentWidth)
+	}
 	status := m.renderStatusLine(contentWidth)
 	prInspector := m.renderPRInspector(contentWidth)
 	footer := m.renderFooter(contentWidth)
@@ -1346,6 +1421,10 @@ func (m DashboardModel) View() tea.View {
 	}
 	if tagView != "" {
 		reservedHeight += lipgloss.Height(tagView)
+		nonBodyParts++
+	}
+	if noteView != "" {
+		reservedHeight += lipgloss.Height(noteView)
 		nonBodyParts++
 	}
 	if confirmView != "" {
@@ -1370,6 +1449,9 @@ func (m DashboardModel) View() tea.View {
 	}
 	if tagView != "" {
 		parts = append(parts, tagView)
+	}
+	if noteView != "" {
+		parts = append(parts, noteView)
 	}
 	parts = append(parts, body)
 	if confirmView != "" {
@@ -1411,6 +1493,9 @@ func (m DashboardModel) renderHeader(width int) string {
 	} else if m.mode == modeTagPicker {
 		modeText = "STATUS"
 		modeColor = "214"
+	} else if m.mode == modeNoteEditor {
+		modeText = "NOTE"
+		modeColor = "170"
 	}
 	row := lipgloss.JoinHorizontal(lipgloss.Center,
 		brand,
@@ -1461,6 +1546,23 @@ func (m DashboardModel) renderTagPicker(width int) string {
 		Padding(0, 1).
 		Width(panelWidth).
 		Render(strings.Join(lines, "\n"))
+}
+
+func (m DashboardModel) renderNoteEditor(width int) string {
+	session := m.currentSession()
+	if session == nil {
+		return ""
+	}
+	panelWidth := max(32, min(width, 100))
+	title := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true).Render("Session note")
+	title += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(truncateMiddle(sessionDisplayTitle(*session), max(12, panelWidth-20)))
+	m.noteInput.SetWidth(max(12, panelWidth-4))
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("170")).
+		Padding(0, 1).
+		Width(panelWidth).
+		Render(title + "\n" + m.noteInput.View())
 }
 
 func (m DashboardModel) renderSessionsPanel(width, height int) string {
@@ -1578,12 +1680,21 @@ func (m DashboardModel) renderKanbanCard(session Session, selected bool, width i
 		prefix = "▌ "
 	}
 	titleWidth := max(1, width-2)
-	title := truncateMiddle(sessionProjectName(session), titleWidth)
+	noteIcon := ""
+	titleTextWidth := titleWidth
+	if strings.TrimSpace(session.Note) != "" {
+		noteIcon = "✎"
+		titleTextWidth = max(1, titleWidth-2)
+	}
+	title := truncateMiddle(sessionProjectName(session), titleTextWidth)
 	branch := truncateMiddle(strings.TrimSpace(session.Branch), titleWidth)
 	if branch == "" {
 		branch = "—"
 	}
 	meta := []string{}
+	if age := sessionParkedAge(session, time.Now()); age != "" {
+		meta = append(meta, "age "+age)
+	}
 	if session.SubagentCount > 0 {
 		meta = append(meta, fmt.Sprintf(" %d", session.SubagentCount))
 	}
@@ -1603,8 +1714,12 @@ func (m DashboardModel) renderKanbanCard(session Session, selected bool, width i
 	if metaLine == "" {
 		metaLine = "—"
 	}
-	padding := strings.Repeat(" ", max(0, titleWidth-lipgloss.Width(title)))
-	first := renderTableSegment(prefix, accent, background, selected) + renderTableSegment(title+padding, foreground, background, selected)
+	padding := strings.Repeat(" ", max(0, titleTextWidth-lipgloss.Width(title)))
+	first := renderTableSegment(prefix, accent, background, selected)
+	if noteIcon != "" {
+		first += renderTableSegment(noteIcon, accent, background, true) + renderTableSegment(" ", foreground, background, selected)
+	}
+	first += renderTableSegment(title+padding, foreground, background, selected)
 	return []string{
 		first,
 		renderTableSegment("  "+padTableCell(branch, titleWidth), "246", background, false),
@@ -2039,6 +2154,17 @@ func formatRelativeAge(at, now time.Time) string {
 	return fmt.Sprintf("%dd ago", int(age/(24*time.Hour)))
 }
 
+func sessionParkedAge(session Session, now time.Time) string {
+	if session.Tag == SessionTagNone {
+		return ""
+	}
+	at := session.CreatedAt
+	if session.TagUpdatedAt != nil {
+		at = *session.TagUpdatedAt
+	}
+	return strings.TrimSuffix(formatRelativeAge(at, now), " ago")
+}
+
 func prReadinessChip(info *PRInfo) (string, string) {
 	if info.IsDraft {
 		return "DRAFT", "214"
@@ -2202,6 +2328,11 @@ func (m DashboardModel) footerBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "save")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 		}
+	case modeNoteEditor:
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "save")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+		}
 	default:
 		move := key.NewBinding(key.WithKeys("j", "k", "up", "down"), key.WithHelp("j/k", "move"))
 		if m.kanbanView {
@@ -2220,6 +2351,7 @@ func (m DashboardModel) footerBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "view")),
 			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new")),
 			key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "status")),
+			key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "note")),
 			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close")),
 			key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 		)

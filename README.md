@@ -118,6 +118,7 @@ enter      switch/attach to selected tmux session
 v          toggle table/kanban view
 n          create session
 t          set session status
+e          edit selected session note
 x          close selected session
 o          open cached PR for selected session
 p          refresh PR for selected session
@@ -136,7 +137,7 @@ WAITING REVIEW
 TESTING
 ```
 
-Sessions marked `WAITING REVIEW` or `TESTING` move into separate parked sections below active sessions and are excluded from the active count. The manual tag overrides the current agent state until changed back to `ACTIVE`.
+Sessions marked `WAITING REVIEW` or `TESTING` move into separate parked sections below active sessions and are excluded from the active count. The manual tag overrides the current agent state until changed back to `ACTIVE`. Press `e` to open the selected session's note popup, where an empty note clears it; noted kanban cards show a highlighted `✎` icon.
 
 ## Agent Status
 

@@ -134,7 +134,7 @@ func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (
 	if err != nil {
 		return Session{}, err
 	}
-	sessionName := "oak-" + id[:12]
+	sessionName := tmuxSessionName(root, branch, id)
 	now := time.Now().UTC()
 	session := Session{ID: id, Root: root, Workdir: workdir, RepoKey: repoKey, Branch: branch, OwnedWorktree: ownedWorktree, TmuxSessionName: sessionName, CreatedAt: now, UpdatedAt: now}
 	// Pi may emit session_start as soon as the pane starts, so make identity
@@ -180,6 +180,14 @@ func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (
 		return Session{}, err
 	}
 	return updated, nil
+}
+
+func tmuxSessionName(root, branch, id string) string {
+	parts := []string{"oak", SafeComponent(filepath.Base(root))}
+	if branch != "" {
+		parts = append(parts, SafeComponent(branch))
+	}
+	return strings.Join(append(parts, id[:6]), "-")
 }
 
 func normalizeBranchMode(mode BranchMode) (BranchMode, error) {
@@ -229,7 +237,27 @@ func (s *Service) SetSessionTag(ctx context.Context, id string, tag SessionTag) 
 		return Session{}, err
 	}
 	err = s.Store.UpdateSession(id, func(session *Session) error {
+		if session.Tag == normalized {
+			return nil
+		}
 		session.Tag = normalized
+		if normalized == SessionTagNone {
+			session.TagUpdatedAt = nil
+		} else {
+			now := time.Now().UTC()
+			session.TagUpdatedAt = &now
+		}
+		return nil
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return s.Store.LoadSession(id)
+}
+
+func (s *Service) SetSessionNote(ctx context.Context, id, note string) (Session, error) {
+	err := s.Store.UpdateSession(id, func(session *Session) error {
+		session.Note = strings.TrimSpace(note)
 		return nil
 	})
 	if err != nil {

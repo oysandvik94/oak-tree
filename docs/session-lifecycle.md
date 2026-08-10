@@ -38,6 +38,8 @@
 7. If the branch exists neither locally nor on `origin`, oak-tree fails before starting tmux.
 8. If tmux startup fails, oak-tree removes only worktrees it owns.
 
+New tmux sessions use descriptive names: `oak-<repository>-<branch>-<short-id>`, or `oak-<repository>-<short-id>` without a branch. Components are sanitized for tmux, and the short session ID keeps names unique.
+
 ## Dashboard Root Picker
 
 The dashboard create flow reads:
@@ -78,7 +80,7 @@ The extension also observes `pi-subagents` tool progress and async lifecycle eve
 
 ## Dashboard Session Table
 
-The dashboard is a full-width, dense session table optimized for session management. Each row shows agent state, project/session, branch, Git state, cached PR state, Pi todo progress on wide layouts, and usage where available. Kanban cards additionally show ` N` while a Pi session has a reported subagent team. Todo progress uses completed/total counts with distinct in-progress, pending, and complete chips; `space` expands or collapses the selected session's task subjects inline. Summary counters highlight sessions needing attention, working, ready, waiting review, and testing. Manually tagged review and testing sessions are excluded from the active count and grouped in separate parked sections below active sessions. The selected row is highlighted; `enter` attaches to the actual tmux workspace.
+The dashboard is a full-width, dense session table optimized for session management. Each row shows agent state, project/session, branch, Git state, cached PR state, Pi todo progress on wide layouts, and usage where available. Kanban cards additionally show ` N` while a Pi session has a reported subagent team. Todo progress uses completed/total counts with distinct in-progress, pending, and complete chips; `space` expands or collapses the selected session's task subjects inline. Summary counters highlight sessions needing attention, working, ready, waiting review, and testing. Manually tagged review and testing sessions are excluded from the active count and grouped in separate parked sections below active sessions. Their kanban cards show a compact age measured from the latest tag change; legacy records fall back to session creation time because their original tag time was not recorded. Sessions may also store a one-line note opened and edited with `e`; noted kanban cards show a highlighted `✎` icon instead of inline note text. The selected row is highlighted; `enter` attaches to the actual tmux workspace.
 
 The dashboard no longer renders a live agent-pane preview or polls tmux capture output. Agent pane capture remains available to lifecycle/status inference and service-level integrations, but it is not part of the dashboard rendering loop.
 

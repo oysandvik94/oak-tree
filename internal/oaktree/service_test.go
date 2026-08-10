@@ -10,6 +10,16 @@ import (
 	"time"
 )
 
+func TestTmuxSessionNameDescribesRepositoryAndBranch(t *testing.T) {
+	id := "a1b2c3d4e5f6"
+	if got, want := tmuxSessionName("/repos/oak-tree", "feature/session names", id), "oak-oak-tree-feature-session-names-a1b2c3"; got != want {
+		t.Fatalf("tmuxSessionName() = %q, want %q", got, want)
+	}
+	if got, want := tmuxSessionName("/repos/oak-tree", "", id), "oak-oak-tree-a1b2c3"; got != want {
+		t.Fatalf("tmuxSessionName() without branch = %q, want %q", got, want)
+	}
+}
+
 type stubRunner struct {
 	outputFunc func(name string, args []string) ([]byte, error)
 	runFunc    func(name string, args []string) error
@@ -791,6 +801,39 @@ func TestRefreshSessionPRDoesNotLockStoreDuringFetch(t *testing.T) {
 	}
 	if updated.AgentStatus != AgentStatusIdle {
 		t.Fatalf("AgentStatus = %q, want %q", updated.AgentStatus, AgentStatusIdle)
+	}
+}
+
+func TestSetSessionTagTracksWhenParkedStateChanged(t *testing.T) {
+	stateDir := t.TempDir()
+	store := NewStore(stateDir)
+	old := testTime()
+	session := Session{ID: "session-tag-age", Tag: SessionTagWaitingReview, TagUpdatedAt: &old}
+	if err := store.SaveSession(session); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(Paths{StateDir: stateDir}, store, &stubRunner{})
+
+	unchanged, err := svc.SetSessionTag(context.Background(), session.ID, SessionTagWaitingReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.TagUpdatedAt == nil || !unchanged.TagUpdatedAt.Equal(old) {
+		t.Fatalf("unchanged tag timestamp = %v, want %s", unchanged.TagUpdatedAt, old)
+	}
+	changed, err := svc.SetSessionTag(context.Background(), session.ID, SessionTagTesting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.TagUpdatedAt == nil || !changed.TagUpdatedAt.After(old) {
+		t.Fatalf("changed tag timestamp = %v, want after %s", changed.TagUpdatedAt, old)
+	}
+	active, err := svc.SetSessionTag(context.Background(), session.ID, SessionTagNone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.TagUpdatedAt != nil {
+		t.Fatalf("active tag timestamp = %v, want nil", active.TagUpdatedAt)
 	}
 }
 

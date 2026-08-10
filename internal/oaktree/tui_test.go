@@ -137,11 +137,12 @@ func TestVToggleRendersKanbanBoard(t *testing.T) {
 	service := NewService(Paths{StateDir: stateDir}, NewStore(stateDir), &stubRunner{})
 	model := NewDashboardModel(service, Config{})
 	model.width, model.height = 180, 26
+	parkedAt := time.Now().Add(-49 * time.Hour)
 	model.sessions = []Session{
 		{ID: "question", Root: "/repo/identity", Branch: "feature/question", AgentStatus: AgentStatusQuestion, GitStatus: &GitStatus{Clean: true}},
 		{ID: "working", Root: "/repo/api", Branch: "feature/work", AgentStatus: AgentStatusWorking, SubagentCount: 3},
 		{ID: "ready", Root: "/repo/oak-tree", Branch: "main", AgentStatus: AgentStatusIdle},
-		{ID: "review", Root: "/repo/docs", Branch: "feature/docs", Tag: SessionTagWaitingReview},
+		{ID: "review", Root: "/repo/docs", Branch: "feature/docs", Tag: SessionTagWaitingReview, TagUpdatedAt: &parkedAt, Note: "Jarek review"},
 		{ID: "testing", Root: "/repo/web", Branch: "feature/web", Tag: SessionTagTesting},
 	}
 
@@ -151,10 +152,13 @@ func TestVToggleRendersKanbanBoard(t *testing.T) {
 		t.Fatal("v did not enable kanban view")
 	}
 	rendered := kanban.View().Content
-	for _, want := range []string{"KANBAN", "QUESTION 1", "WORKING 1", "READY 1", "REVIEW 1", "TESTING 1", "identity", "feature/question", " 3", "v", "view"} {
+	for _, want := range []string{"KANBAN", "QUESTION 1", "WORKING 1", "READY 1", "REVIEW 1", "TESTING 1", "identity", "feature/question", "✎", "age 2d", " 3", "v", "view"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("kanban rendering missing %q: %q", want, rendered)
 		}
+	}
+	if strings.Contains(rendered, "Jarek review") {
+		t.Fatalf("kanban card renders note text instead of icon: %q", rendered)
 	}
 	if got := lipgloss.Height(rendered); got != model.height {
 		t.Fatalf("kanban height = %d, want %d", got, model.height)
@@ -535,6 +539,20 @@ func TestFormatRelativeAge(t *testing.T) {
 	}
 }
 
+func TestSessionParkedAge(t *testing.T) {
+	now := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
+	taggedAt := now.Add(-49 * time.Hour)
+	if got := sessionParkedAge(Session{Tag: SessionTagWaitingReview, TagUpdatedAt: &taggedAt}, now); got != "2d" {
+		t.Fatalf("sessionParkedAge() = %q, want %q", got, "2d")
+	}
+	if got := sessionParkedAge(Session{Tag: SessionTagTesting, CreatedAt: now.Add(-3 * time.Hour), UpdatedAt: now.Add(-time.Minute)}, now); got != "3h" {
+		t.Fatalf("legacy sessionParkedAge() = %q, want %q", got, "3h")
+	}
+	if got := sessionParkedAge(Session{CreatedAt: now.Add(-3 * time.Hour)}, now); got != "" {
+		t.Fatalf("sessionParkedAge() for active session = %q, want empty", got)
+	}
+}
+
 func TestFooterBindingsOmitContextualPRKeys(t *testing.T) {
 	model := NewDashboardModel(&Service{}, Config{})
 
@@ -745,6 +763,48 @@ func TestSessionTagPickerPersistsTestingAndMovesSessionDown(t *testing.T) {
 	}
 	if loaded.Tag != SessionTagTesting {
 		t.Fatalf("persisted tag = %q, want %q", loaded.Tag, SessionTagTesting)
+	}
+	if loaded.TagUpdatedAt == nil {
+		t.Fatal("persisted tag timestamp is nil")
+	}
+}
+
+func TestSessionNoteEditorPersistsNote(t *testing.T) {
+	stateDir := t.TempDir()
+	store := NewStore(stateDir)
+	session := Session{ID: "noted", Root: "/repo/noted", Workdir: "/repo/noted", Tag: SessionTagWaitingReview}
+	if err := store.SaveSession(session); err != nil {
+		t.Fatal(err)
+	}
+	model := NewDashboardModel(NewService(Paths{StateDir: stateDir}, store, &stubRunner{}), Config{})
+	model.sessions = []Session{session}
+
+	updated, _ := model.Update(tea.KeyPressMsg(tea.Key{Code: 'e', Text: "e"}))
+	next := updated.(DashboardModel)
+	if next.mode != modeNoteEditor {
+		t.Fatalf("mode = %v, want note editor", next.mode)
+	}
+	next.noteInput.SetValue("  Waiting for review feedback  ")
+	updated, cmd := next.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	next = updated.(DashboardModel)
+	if cmd == nil {
+		t.Fatal("note editor enter returned nil command")
+	}
+	msg, ok := cmd().(noteUpdateMsg)
+	if !ok {
+		t.Fatalf("note update command message = %T, want noteUpdateMsg", cmd())
+	}
+	updated, _ = next.Update(msg)
+	next = updated.(DashboardModel)
+	if next.mode != modeDashboard || next.sessions[0].Note != "Waiting for review feedback" {
+		t.Fatalf("mode/note = %v/%q", next.mode, next.sessions[0].Note)
+	}
+	loaded, err := store.LoadSession(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Note != "Waiting for review feedback" {
+		t.Fatalf("persisted note = %q", loaded.Note)
 	}
 }
 
