@@ -2,6 +2,9 @@
 
 `oak-tree` is a terminal dashboard for managing AI coding sessions inside tmux.
 
+Disclaimer: This is completely vibe-coded and made personally for me, and it's only public as a reference for others who want to create similar tools.
+If you want to have a similar tool, I recommend giving your personal specs to an agent, listing what tooling you use, and providing this repo as a reference project for how an orchestrator tool can be implemented.
+
 It is built for the workflow where each AI work session gets:
 
 - one tmux session

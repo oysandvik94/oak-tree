@@ -82,6 +82,12 @@ When changing lifecycle behavior, command behavior, state schema, tmux layout, u
 
 ## Safety Notes
 
+### Public Repository
+
+- Treat this repository and its Git history as public. Before pushing, inspect the outgoing commits for credentials, private keys, internal employer/customer names or repositories, machine-specific paths, and runtime state.
+- Push only the intended branch explicitly. Never use `git push --all` or `git push --mirror`, and never push backup branches containing pre-public history.
+- If sensitive content was committed, stop before pushing. If it was already pushed, removing it in a later commit is insufficient; clean or recreate the public history and verify the old commit is no longer accessible.
+
 - Do not delete local branches on close unless the user explicitly asks for that feature.
 - Refuse to remove dirty worktrees by default.
 - Keep tmux and git command execution behind small interfaces where possible so behavior can be tested without requiring a live tmux server.
