@@ -41,7 +41,7 @@ It records Pi session identity, `session_start`, `agent_start`, `agent_settled`,
 
 Session records contain tmux pane IDs, worktree ownership, generic Pi session IDs/files, agent status, active subagent count, optional todo summaries, Git status, and cached PR metadata. Unknown fields in older session JSON are ignored when records are read and disappear after the next write.
 
-Runtime state also includes `worktrees/`, `cache/usage.json`, `dashboard.json`, `logs/`, and the Pi extension directory. `dashboard.json` stores the last selected table or kanban view. State directories use owner-only permissions (`0700`) and state files use `0600`. No runtime state is stored in the repository.
+Runtime state also includes `worktrees/`, `cache/usage.json`, `dashboard.json`, `logs/`, and the Pi extension directory. `dashboard.json` stores the last selected table or kanban view and each session's last-viewed status timestamp. State directories use owner-only permissions (`0700`) and state files use `0600`. No runtime state is stored in the repository.
 
 ## Dashboard
 
