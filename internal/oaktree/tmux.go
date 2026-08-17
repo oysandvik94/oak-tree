@@ -60,6 +60,10 @@ func SwitchSessionArgs(target string) []string {
 	return []string{"switch-client", "-t", target}
 }
 
+func CurrentSessionArgs() []string {
+	return []string{"display-message", "-p", "#{client_session}"}
+}
+
 func AttachSessionArgs(target string) []string {
 	return []string{"attach-session", "-t", target}
 }
@@ -155,9 +159,24 @@ func HasTmuxSession(ctx context.Context, runner Runner, target string) bool {
 	return runner.Run(ctx, "tmux", HasSessionArgs(target)...) == nil
 }
 
+func CurrentTmuxSession(ctx context.Context, runner Runner) (string, error) {
+	if os.Getenv("TMUX") == "" {
+		return "", nil
+	}
+	output, err := runner.Output(ctx, "tmux", CurrentSessionArgs()...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func SwitchTmuxSession(ctx context.Context, runner Runner, target string) error {
+	return runner.Run(ctx, "tmux", SwitchSessionArgs(target)...)
+}
+
 func AttachOrSwitch(ctx context.Context, runner Runner, target string) error {
 	if os.Getenv("TMUX") != "" {
-		return runner.Run(ctx, "tmux", SwitchSessionArgs(target)...)
+		return SwitchTmuxSession(ctx, runner, target)
 	}
 	return runner.Run(ctx, "tmux", AttachSessionArgs(target)...)
 }

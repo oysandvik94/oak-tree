@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1104,6 +1105,43 @@ func TestRefreshSessionPRInfersMissingBranch(t *testing.T) {
 	}
 	if updated.PR == nil || updated.PR.Number != 9 {
 		t.Fatalf("RefreshSessionPR() PR = %#v, want PR #9", updated.PR)
+	}
+}
+
+func TestCloseCurrentSessionSwitchesToFallbackBeforeKilling(t *testing.T) {
+	t.Setenv("TMUX", "/tmp/tmux/default,1,0")
+	t.Setenv("TMUX_PANE", "")
+	stateDir := t.TempDir()
+	store := NewStore(stateDir)
+	session := Session{ID: "closing", TmuxSessionName: "oak-closing"}
+	if err := store.SaveSession(session); err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	runner := &stubRunner{
+		outputFunc: func(name string, args []string) ([]byte, error) {
+			calls = append(calls, name+" "+strings.Join(args, " "))
+			return []byte("oak-closing\n"), nil
+		},
+		runFunc: func(name string, args []string) error {
+			calls = append(calls, name+" "+strings.Join(args, " "))
+			return nil
+		},
+	}
+	svc := NewService(Paths{StateDir: stateDir}, store, runner)
+
+	if err := svc.CloseSessionWithFallback(context.Background(), session.ID, "oak-next"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"tmux has-session -t oak-closing",
+		"tmux display-message -p #{client_session}",
+		"tmux has-session -t oak-next",
+		"tmux switch-client -t oak-next",
+		"tmux kill-session -t oak-closing",
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("tmux calls = %#v, want %#v", calls, want)
 	}
 }
 

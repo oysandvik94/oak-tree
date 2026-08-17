@@ -283,6 +283,10 @@ func (s *Service) AcknowledgeAgentAttention(ctx context.Context, id string) (Ses
 }
 
 func (s *Service) CloseSession(ctx context.Context, id string) error {
+	return s.CloseSessionWithFallback(ctx, id, "")
+}
+
+func (s *Service) CloseSessionWithFallback(ctx context.Context, id, fallbackTmuxSession string) error {
 	session, err := s.Store.FindSessionByID(id)
 	if err != nil {
 		return err
@@ -297,6 +301,18 @@ func (s *Service) CloseSession(ctx context.Context, id string) error {
 		}
 	}
 	if HasTmuxSession(ctx, s.Exec, session.TmuxSessionName) {
+		current, err := CurrentTmuxSession(ctx, s.Exec)
+		if err != nil {
+			return fmt.Errorf("detect current tmux session: %w", err)
+		}
+		if current == session.TmuxSessionName && fallbackTmuxSession != "" {
+			if !HasTmuxSession(ctx, s.Exec, fallbackTmuxSession) {
+				return fmt.Errorf("fallback tmux session %s is unavailable", fallbackTmuxSession)
+			}
+			if err := SwitchTmuxSession(ctx, s.Exec, fallbackTmuxSession); err != nil {
+				return fmt.Errorf("switch to fallback tmux session %s: %w", fallbackTmuxSession, err)
+			}
+		}
 		if err := KillTmuxSession(ctx, s.Exec, session.TmuxSessionName); err != nil {
 			return err
 		}

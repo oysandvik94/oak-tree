@@ -40,6 +40,10 @@
 
 New tmux sessions use descriptive names: `oak-<repository>-<branch>-<short-id>`, or `oak-<repository>-<short-id>` without a branch. Components are sanitized for tmux, and the short session ID keeps names unique.
 
+## Close Session
+
+Closing still refuses to remove a dirty oak-tree-owned worktree. When the dashboard popup is opened from the tmux session being closed, it first switches the client to the next visible oak-tree session, or the previous one when closing the last visible row, and then kills the old session. Closing the only managed session retains tmux's normal detach behavior because no fallback session exists.
+
 ## Dashboard Root Picker
 
 The dashboard create flow reads:

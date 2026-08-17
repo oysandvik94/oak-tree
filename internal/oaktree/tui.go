@@ -579,9 +579,9 @@ func (m DashboardModel) createCmd(root, branch string, branchMode BranchMode) te
 	}
 }
 
-func (m DashboardModel) closeCmd(session Session) tea.Cmd {
+func (m DashboardModel) closeCmd(session Session, fallbackTmuxSession string) tea.Cmd {
 	return func() tea.Msg {
-		err := m.svc.CloseSession(context.Background(), session.ID)
+		err := m.svc.CloseSessionWithFallback(context.Background(), session.ID, fallbackTmuxSession)
 		return closeResultMsg{sessionID: session.ID, err: err}
 	}
 }
@@ -644,6 +644,16 @@ func (m DashboardModel) usageTickCmd() tea.Cmd {
 	return tea.Tick(usageRefreshInterval, func(time.Time) tea.Msg {
 		return usageTickMsg{}
 	})
+}
+
+func (m DashboardModel) closeFallbackTmuxSession() string {
+	if m.selected+1 < len(m.sessions) {
+		return m.sessions[m.selected+1].TmuxSessionName
+	}
+	if m.selected > 0 {
+		return m.sessions[m.selected-1].TmuxSessionName
+	}
+	return ""
 }
 
 func (m DashboardModel) currentSession() *Session {
@@ -1252,7 +1262,7 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.closing = true
 				m.mode = modeDashboard
 				m.status = "closing"
-				return m, m.closeCmd(*sel)
+				return m, m.closeCmd(*sel, m.closeFallbackTmuxSession())
 			}
 		}
 	}
