@@ -505,6 +505,7 @@ type DashboardModel struct {
 	motionTickerActive bool
 	todoExpanded       bool
 	kanbanView         bool
+	statusSeenAt       map[string]time.Time
 }
 
 func NewDashboardModel(svc *Service, cfg Config) DashboardModel {
@@ -530,6 +531,7 @@ func NewDashboardModel(svc *Service, cfg Config) DashboardModel {
 	if svc != nil && svc.Store != nil {
 		if preferences, err := svc.Store.LoadDashboardPreferences(); err == nil {
 			model.kanbanView = preferences.KanbanView
+			model.statusSeenAt = preferences.StatusSeenAt
 		}
 	}
 	return model
@@ -743,6 +745,49 @@ func sessionWithPreservedTransient(previous, next Session) Session {
 	return next
 }
 
+func sessionStatusUpdatedAt(session Session) time.Time {
+	latest := session.AgentStatusUpdatedAt
+	if latest == nil || session.TagUpdatedAt != nil && session.TagUpdatedAt.After(*latest) {
+		latest = session.TagUpdatedAt
+	}
+	if latest == nil {
+		return time.Time{}
+	}
+	return *latest
+}
+
+func (m DashboardModel) hasUnseenStatus(session Session) bool {
+	seen, ok := m.statusSeenAt[session.ID]
+	return ok && sessionStatusUpdatedAt(session).After(seen)
+}
+
+func (m DashboardModel) syncStatusSeenAt() DashboardModel {
+	if m.statusSeenAt == nil {
+		m.statusSeenAt = map[string]time.Time{}
+	}
+	changed := false
+	for _, session := range m.sessions {
+		if _, ok := m.statusSeenAt[session.ID]; !ok {
+			m.statusSeenAt[session.ID] = sessionStatusUpdatedAt(session)
+			changed = true
+		}
+	}
+	if selected := m.currentSession(); selected != nil {
+		updatedAt := sessionStatusUpdatedAt(*selected)
+		if seen := m.statusSeenAt[selected.ID]; updatedAt.After(seen) {
+			m.statusSeenAt[selected.ID] = updatedAt
+			changed = true
+		}
+	}
+	if changed && m.svc != nil && m.svc.Store != nil {
+		if err := m.svc.Store.SaveDashboardPreferences(DashboardPreferences{KanbanView: m.kanbanView, StatusSeenAt: m.statusSeenAt}); err != nil {
+			m.err = err
+			m.status = "view state save failed"
+		}
+	}
+	return m
+}
+
 func (m DashboardModel) preserveAgentSnapshotTransient(sessions []Session) []Session {
 	previous := make(map[string]Session, len(m.sessions))
 	for _, session := range m.sessions {
@@ -910,7 +955,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
-		m = m.withSessionsPreservingSelection(msg.sessions)
+		m = m.withSessionsPreservingSelection(msg.sessions).syncStatusSeenAt()
 		if len(m.sessions) == 0 {
 			if m.status == "refreshing" {
 				m.status = "ready"
@@ -929,7 +974,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.withAnimationCmd(cmds...)
 	case agentStatusRefreshMsg:
 		if msg.err == nil {
-			m = m.withSessionsPreservingVisibleOrder(m.preserveAgentSnapshotTransient(msg.sessions))
+			m = m.withSessionsPreservingVisibleOrder(m.preserveAgentSnapshotTransient(msg.sessions)).syncStatusSeenAt()
 		}
 		cmds := []tea.Cmd{m.agentStatusRefreshCmd()}
 		return m.withAnimationCmd(cmds...)
@@ -1060,7 +1105,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = orderSessionsForDashboard(m.sessions)
 		m = m.withSelected(msg.session.ID)
 		m.status = "marked " + sessionTagLabel(msg.session.Tag)
-		return m, nil
+		return m.syncStatusSeenAt(), nil
 	case noteUpdateMsg:
 		m.noteUpdating = false
 		if msg.err != nil {
@@ -1188,7 +1233,7 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.kanbanView = !m.kanbanView
 		m.todoExpanded = false
 		if m.svc != nil && m.svc.Store != nil {
-			if err := m.svc.Store.SaveDashboardPreferences(DashboardPreferences{KanbanView: m.kanbanView}); err != nil {
+			if err := m.svc.Store.SaveDashboardPreferences(DashboardPreferences{KanbanView: m.kanbanView, StatusSeenAt: m.statusSeenAt}); err != nil {
 				m.err = err
 				m.status = "view preference failed"
 			}
@@ -1205,13 +1250,13 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "h", "left":
 		if m.kanbanView {
 			m.selected = kanbanSelection(m.sessions, m.selected, -1, 0)
-			return m.withAnimationCmd()
+			return m.syncStatusSeenAt().withAnimationCmd()
 		}
 		return m, nil
 	case "l", "right":
 		if m.kanbanView {
 			m.selected = kanbanSelection(m.sessions, m.selected, 1, 0)
-			return m.withAnimationCmd()
+			return m.syncStatusSeenAt().withAnimationCmd()
 		}
 		return m, nil
 	case "j", "down":
@@ -1220,11 +1265,11 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.kanbanView {
 			m.selected = kanbanSelection(m.sessions, m.selected, 0, 1)
-			return m.withAnimationCmd()
+			return m.syncStatusSeenAt().withAnimationCmd()
 		}
 		if m.selected < len(m.sessions)-1 {
 			m.selected++
-			return m.withAnimationCmd()
+			return m.syncStatusSeenAt().withAnimationCmd()
 		}
 		return m, nil
 	case "k", "up":
@@ -1233,11 +1278,11 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.kanbanView {
 			m.selected = kanbanSelection(m.sessions, m.selected, 0, -1)
-			return m.withAnimationCmd()
+			return m.syncStatusSeenAt().withAnimationCmd()
 		}
 		if m.selected > 0 {
 			m.selected--
-			return m.withAnimationCmd()
+			return m.syncStatusSeenAt().withAnimationCmd()
 		}
 		return m, nil
 	case "n":
@@ -1696,7 +1741,11 @@ func (m DashboardModel) renderKanbanCard(session Session, selected bool, width i
 		noteIcon = "✎"
 		titleTextWidth = max(1, titleWidth-2)
 	}
-	title := truncateMiddle(sessionProjectName(session), titleTextWidth)
+	titleText := sessionProjectName(session)
+	if m.hasUnseenStatus(session) {
+		titleText = "● " + titleText
+	}
+	title := truncateMiddle(titleText, titleTextWidth)
 	branch := truncateMiddle(strings.TrimSpace(session.Branch), titleWidth)
 	if branch == "" {
 		branch = "—"
@@ -1836,9 +1885,13 @@ func (m DashboardModel) renderSessionTableRow(session Session, selected bool, wi
 		costColor = "81"
 	}
 	rowForeground, rowBackground := tableRowColors(selected)
+	sessionTitle := sessionProjectName(session)
+	if m.hasUnseenStatus(session) {
+		sessionTitle = "● " + sessionTitle
+	}
 	line := sessionTableChipLine(
 		tableChipCell(state, stateColor, stateBackground),
-		tablePlainCell(sessionProjectName(session), rowForeground),
+		tablePlainCell(sessionTitle, rowForeground),
 		tablePlainCell(strings.TrimSpace(session.Branch), rowForeground),
 		tableChipCell(git, gitColor, gitBackground),
 		tableChipCell(pr, prColor, prBackground),

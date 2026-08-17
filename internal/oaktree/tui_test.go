@@ -173,6 +173,42 @@ func TestVToggleRendersKanbanBoard(t *testing.T) {
 	}
 }
 
+func TestDashboardMarksStatusChangesUntilSessionIsSelected(t *testing.T) {
+	stateDir := t.TempDir()
+	store := NewStore(stateDir)
+	seenAt := time.Now().Add(-time.Hour).UTC()
+	changedAt := time.Now().UTC()
+	if err := store.SaveDashboardPreferences(DashboardPreferences{StatusSeenAt: map[string]time.Time{"identity": seenAt, "api": seenAt}}); err != nil {
+		t.Fatal(err)
+	}
+	model := NewDashboardModel(NewService(Paths{StateDir: stateDir}, store, &stubRunner{}), Config{})
+	model.width, model.height = 120, 24
+	updated, _ := model.Update(dashboardMsg{sessions: []Session{
+		{ID: "identity", Root: "/repo/identity", AgentStatus: AgentStatusIdle, AgentStatusUpdatedAt: &changedAt},
+		{ID: "api", Root: "/repo/api", AgentStatus: AgentStatusIdle, AgentStatusUpdatedAt: &changedAt},
+	}})
+	model = updated.(DashboardModel)
+	for _, kanban := range []bool{false, true} {
+		model.kanbanView = kanban
+		if rendered := model.View().Content; !strings.Contains(rendered, "● api") || strings.Contains(rendered, "● identity") {
+			t.Fatalf("status notification did not mark only the unselected session: %q", rendered)
+		}
+	}
+
+	updated, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	model = updated.(DashboardModel)
+	if rendered := model.View().Content; strings.Contains(rendered, "● api") {
+		t.Fatalf("status notification remained after selection: %q", rendered)
+	}
+	preferences, err := store.LoadDashboardPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preferences.StatusSeenAt["api"].Equal(changedAt) {
+		t.Fatalf("persisted seen time = %v, want %v", preferences.StatusSeenAt["api"], changedAt)
+	}
+}
+
 func TestKanbanNavigationMovesWithinAndAcrossColumns(t *testing.T) {
 	model := NewDashboardModel(&Service{}, Config{})
 	model.kanbanView = true
