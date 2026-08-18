@@ -20,10 +20,13 @@ func TestEnsurePiExtensionContainsLifecycleAndQuestionTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()", "subagent:async-started", "subagent:async-complete", "tool_execution_update", "subagent_count"} {
+	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("extension missing %q", want)
 		}
+	}
+	if strings.Contains(string(data), "subagent") {
+		t.Fatal("extension must not integrate pi-subagents")
 	}
 	if strings.Contains(string(data), `"--quiet"`) {
 		t.Fatal("extension must observe hook failures so startup events can retry")
@@ -70,7 +73,7 @@ func TestPiCommandReportsMissingPi(t *testing.T) {
 func TestHandleAgentEventUsesDirectOakIdentityAndPiStatus(t *testing.T) {
 	state := t.TempDir()
 	store := NewStore(state)
-	session := Session{ID: "oak-1", Root: "/repo", Workdir: "/repo", TmuxSessionName: "oak-1", RightPaneID: "%2", SubagentCount: 2, CreatedAt: time.Now().UTC()}
+	session := Session{ID: "oak-1", Root: "/repo", Workdir: "/repo", TmuxSessionName: "oak-1", RightPaneID: "%2", CreatedAt: time.Now().UTC()}
 	if err := store.SaveSession(session); err != nil {
 		t.Fatal(err)
 	}
@@ -119,9 +122,6 @@ func TestHandleAgentEventUsesDirectOakIdentityAndPiStatus(t *testing.T) {
 			t.Fatalf("status after %s = %q, want %q", transition.event, got.AgentStatus, transition.want)
 		}
 	}
-	if got.SubagentCount != 0 {
-		t.Fatalf("session shutdown left %d active subagents", got.SubagentCount)
-	}
 	if err := svc.HandleAgentEvent(context.Background(), AgentEvent{OakSessionID: "oak-1", Event: "agent_settled"}); err != nil {
 		t.Fatal(err)
 	}
@@ -165,32 +165,6 @@ func TestHandleAgentEventStoresTodoSummaryWithoutChangingAgentStatus(t *testing.
 	}
 	if err := svc.HandleAgentEvent(context.Background(), AgentEvent{OakSessionID: "oak-todo", Event: "todo", Todo: &TodoSummary{Total: 1, Pending: 1, Tasks: []TodoTask{{Subject: "Wrong status", Status: "completed"}}}}); err == nil {
 		t.Fatal("todo details inconsistent with counts were accepted")
-	}
-}
-
-func TestHandleAgentEventStoresSubagentCountWithoutChangingAgentStatus(t *testing.T) {
-	state := t.TempDir()
-	store := NewStore(state)
-	updatedAt := time.Now().UTC().Add(-time.Minute)
-	if err := store.SaveSession(Session{ID: "oak-fleet", RightPaneID: "%2", AgentStatus: AgentStatusWorking, AgentStatusUpdatedAt: &updatedAt, CreatedAt: time.Now().UTC()}); err != nil {
-		t.Fatal(err)
-	}
-	svc := NewService(Paths{StateDir: state}, store, &stubRunner{})
-	if err := svc.HandleAgentEvent(context.Background(), AgentEvent{OakSessionID: "oak-fleet", Event: "subagents", SubagentCount: 4}); err != nil {
-		t.Fatal(err)
-	}
-	got, err := store.LoadSession("oak-fleet")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.SubagentCount != 4 {
-		t.Fatalf("subagent count = %d, want 4", got.SubagentCount)
-	}
-	if got.AgentStatus != AgentStatusWorking || got.AgentStatusUpdatedAt == nil || !got.AgentStatusUpdatedAt.Equal(updatedAt) {
-		t.Fatalf("subagent event changed agent status: %#v", got)
-	}
-	if err := svc.HandleAgentEvent(context.Background(), AgentEvent{OakSessionID: "oak-fleet", Event: "subagents", SubagentCount: -1}); err == nil {
-		t.Fatal("negative subagent count was accepted")
 	}
 }
 

@@ -11,13 +11,12 @@ import (
 )
 
 type AgentEvent struct {
-	OakSessionID  string       `json:"oak_session_id"`
-	Event         string       `json:"event"`
-	Cwd           string       `json:"cwd,omitempty"`
-	SessionID     string       `json:"session_id,omitempty"`
-	SessionFile   string       `json:"session_file,omitempty"`
-	Todo          *TodoSummary `json:"todo,omitempty"`
-	SubagentCount int          `json:"subagent_count,omitempty"`
+	OakSessionID string       `json:"oak_session_id"`
+	Event        string       `json:"event"`
+	Cwd          string       `json:"cwd,omitempty"`
+	SessionID    string       `json:"session_id,omitempty"`
+	SessionFile  string       `json:"session_file,omitempty"`
+	Todo         *TodoSummary `json:"todo,omitempty"`
 }
 
 func ParseAgentEvent(r io.Reader) (AgentEvent, error) {
@@ -47,9 +46,6 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 			return err
 		}
 	}
-	if event.Event == "subagents" && event.SubagentCount < 0 {
-		return errors.New("invalid subagent count")
-	}
 	shouldNotifyQuestion := event.Event == "question" && session.AgentStatus != AgentStatusQuestion
 	shouldNotifySettled := event.Event == "agent_settled" && session.AgentStatus == AgentStatusWorking
 	now := time.Now().UTC()
@@ -68,7 +64,6 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 		case "session_start", "session_shutdown":
 			if event.Event == "session_shutdown" {
 				stored.AgentStatus = AgentStatusIdle
-				stored.SubagentCount = 0
 			}
 		case "agent_start", "question_answered":
 			stored.AgentStatus = AgentStatusWorking
@@ -79,9 +74,6 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 		case "todo":
 			summary := *event.Todo
 			stored.Todo = &summary
-			return nil
-		case "subagents":
-			stored.SubagentCount = event.SubagentCount
 			return nil
 		default:
 			return fmt.Errorf("unknown agent event %q", event.Event)

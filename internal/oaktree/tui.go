@@ -1754,9 +1754,6 @@ func (m DashboardModel) renderKanbanCard(session Session, selected bool, width i
 	if age := sessionParkedAge(session, time.Now()); age != "" {
 		meta = append(meta, "age "+age)
 	}
-	if session.SubagentCount > 0 {
-		meta = append(meta, fmt.Sprintf(" %d", session.SubagentCount))
-	}
 	if session.GitStatus != nil {
 		meta = append(meta, gitStatusChip(session.GitStatus))
 	}

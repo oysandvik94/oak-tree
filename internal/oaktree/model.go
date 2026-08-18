@@ -52,7 +52,6 @@ type Session struct {
 	TagUpdatedAt         *time.Time   `json:"tag_updated_at,omitempty"`
 	Note                 string       `json:"note,omitempty"`
 	Todo                 *TodoSummary `json:"todo,omitempty"`
-	SubagentCount        int          `json:"subagent_count,omitempty"`
 	GitStatus            *GitStatus   `json:"-"`
 	PR                   *PRInfo      `json:"pr,omitempty"`
 	CreatedAt            time.Time    `json:"created_at"`

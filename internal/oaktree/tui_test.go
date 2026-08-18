@@ -140,7 +140,7 @@ func TestVToggleRendersKanbanBoard(t *testing.T) {
 	parkedAt := time.Now().Add(-49 * time.Hour)
 	model.sessions = []Session{
 		{ID: "question", Root: "/repo/identity", Branch: "feature/question", AgentStatus: AgentStatusQuestion, GitStatus: &GitStatus{Clean: true}},
-		{ID: "working", Root: "/repo/api", Branch: "feature/work", AgentStatus: AgentStatusWorking, SubagentCount: 3},
+		{ID: "working", Root: "/repo/api", Branch: "feature/work", AgentStatus: AgentStatusWorking},
 		{ID: "ready", Root: "/repo/oak-tree", Branch: "main", AgentStatus: AgentStatusIdle},
 		{ID: "review", Root: "/repo/docs", Branch: "feature/docs", Tag: SessionTagWaitingReview, TagUpdatedAt: &parkedAt, Note: "Jarek review"},
 		{ID: "testing", Root: "/repo/web", Branch: "feature/web", Tag: SessionTagTesting},
@@ -152,7 +152,7 @@ func TestVToggleRendersKanbanBoard(t *testing.T) {
 		t.Fatal("v did not enable kanban view")
 	}
 	rendered := kanban.View().Content
-	for _, want := range []string{"KANBAN", "QUESTION 1", "WORKING 1", "READY 1", "REVIEW 1", "TESTING 1", "identity", "feature/question", "✎", "age 2d", " 3", "v", "view"} {
+	for _, want := range []string{"KANBAN", "QUESTION 1", "WORKING 1", "READY 1", "REVIEW 1", "TESTING 1", "identity", "feature/question", "✎", "age 2d", "v", "view"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("kanban rendering missing %q: %q", want, rendered)
 		}

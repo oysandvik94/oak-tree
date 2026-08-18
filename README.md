@@ -128,7 +128,7 @@ p          refresh PR for selected session
 q          quit
 ```
 
-When closing, press `y` to confirm. If the dashboard popup is running from the session being closed, oak-tree switches the tmux client to a nearby remaining session before killing it. Kanban view groups sessions into `QUESTION`, `WORKING`, `READY`, `REVIEW`, and `TESTING` columns while keeping the same selection and actions. A ` N` card metric shows the reported subagent team size. The last selected view is restored the next time the dashboard opens.
+When closing, press `y` to confirm. If the dashboard popup is running from the session being closed, oak-tree switches the tmux client to a nearby remaining session before killing it. Kanban view groups sessions into `QUESTION`, `WORKING`, `READY`, `REVIEW`, and `TESTING` columns while keeping the same selection and actions. The last selected view is restored the next time the dashboard opens.
 
 ## Session Status
 

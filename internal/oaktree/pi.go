@@ -19,7 +19,7 @@ export default function (pi) {
     const args = ["hook", "agent-event", "--oak-session", oak, "--event", event];
     for (const [key, value] of Object.entries(extra)) {
       if (value === undefined || value === null || value === "") continue;
-      if (!["cwd", "session_id", "session_file", "todo_total", "todo_pending", "todo_in_progress", "todo_completed", "todo_json", "subagent_count"].includes(key)) continue;
+      if (!["cwd", "session_id", "session_file", "todo_total", "todo_pending", "todo_in_progress", "todo_completed", "todo_json"].includes(key)) continue;
       args.push("--" + key.replaceAll("_", "-"), String(value));
     }
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -36,36 +36,6 @@ export default function (pi) {
     session_file: ctx.sessionManager.getSessionFile(),
   });
   let currentIdentity;
-  let reportedSubagents = -1;
-  let subagentReport = Promise.resolve();
-  const foregroundSubagents = new Map();
-  const asyncSubagents = new Map();
-  const subagentTotal = () => [...foregroundSubagents.values(), ...asyncSubagents.values()].reduce((total, count) => total + count, 0);
-  const reportSubagents = () => {
-    if (!currentIdentity) return subagentReport;
-    const count = subagentTotal();
-    if (count === reportedSubagents) return subagentReport;
-    reportedSubagents = count;
-    const snapshot = currentIdentity;
-    subagentReport = subagentReport.then(() => hook("subagents", { ...snapshot, subagent_count: count }));
-    return subagentReport;
-  };
-  const requestedSubagents = (args) => {
-    if (Array.isArray(args?.parallel)) return Math.max(1, args.parallel.reduce((total, child) => total + Math.max(1, Number(child?.count) || 1), 0));
-    if (Array.isArray(args?.steps)) return Math.max(1, args.steps.length);
-    return 1;
-  };
-  const asyncTeamSize = (event) => Math.max(1, Array.isArray(event?.agents) ? event.agents.length : 1);
-  pi.events.on("subagent:async-started", (event) => {
-    if (typeof event?.id !== "string" || !event.id) return;
-    asyncSubagents.set(event.id, asyncTeamSize(event));
-    void reportSubagents();
-  });
-  pi.events.on("subagent:async-complete", (event) => {
-    const id = typeof event?.runId === "string" ? event.runId : event?.id;
-    if (typeof id !== "string" || !asyncSubagents.delete(id)) return;
-    void reportSubagents();
-  });
   const todoSummary = (details) => {
     if (!Array.isArray(details?.tasks)) return;
     const summary = { todo_total: 0, todo_pending: 0, todo_in_progress: 0, todo_completed: 0, todo_json: "[]" };
@@ -86,11 +56,7 @@ export default function (pi) {
   };
   pi.on("session_start", async (_event, ctx) => {
     currentIdentity = identity(ctx);
-    foregroundSubagents.clear();
-    asyncSubagents.clear();
-    reportedSubagents = -1;
     await hook("session_start", currentIdentity);
-    await reportSubagents();
     let latest = { tasks: [] };
     for (const entry of ctx.sessionManager.getBranch()) {
       const message = entry?.type === "message" ? entry.message : undefined;
@@ -102,9 +68,6 @@ export default function (pi) {
   pi.on("agent_start", async (_event, ctx) => { await hook("agent_start", identity(ctx)); });
   pi.on("agent_settled", async (_event, ctx) => { await hook("agent_settled", identity(ctx)); });
   pi.on("session_shutdown", async (_event, ctx) => {
-    foregroundSubagents.clear();
-    asyncSubagents.clear();
-    await reportSubagents();
     await hook("session_shutdown", identity(ctx));
     currentIdentity = undefined;
   });
@@ -112,24 +75,12 @@ export default function (pi) {
   let externalQuestion;
   let externalQuestionHook;
   pi.on("tool_execution_start", (event, ctx) => {
-    if (event.toolName === "subagent" && !event.args?.action) {
-      foregroundSubagents.set(event.toolCallId, requestedSubagents(event.args));
-      void reportSubagents();
-    }
     if (event.toolName === "ask_user_question") externalQuestion = identity(ctx);
-  });
-  pi.on("tool_execution_update", (event) => {
-    if (event.toolName !== "subagent" || !foregroundSubagents.has(event.toolCallId)) return;
-    const progress = event.partialResult?.details?.progress;
-    if (!Array.isArray(progress) || progress.length === 0) return;
-    foregroundSubagents.set(event.toolCallId, progress.length);
-    void reportSubagents();
   });
   pi.events.on("rpiv:ask-user:prompt", () => {
     if (externalQuestion) externalQuestionHook = hook("question", externalQuestion);
   });
   pi.on("tool_execution_end", async (event, ctx) => {
-    if (event.toolName === "subagent" && foregroundSubagents.delete(event.toolCallId)) void reportSubagents();
     if (event.toolName === "todo" && !event.isError) await reportTodos(ctx, event.result?.details);
     if (event.toolName !== "ask_user_question") return;
     const questionHook = externalQuestionHook;

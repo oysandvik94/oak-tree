@@ -23,7 +23,7 @@ func newHookCommand() *cobra.Command {
 func newAgentEventHookCommand() *cobra.Command {
 	var quiet bool
 	var oakSession, eventName, cwd, sessionID, sessionFile, todoJSON, legacyAgent string
-	var todoTotal, todoPending, todoInProgress, todoCompleted, subagentCount int
+	var todoTotal, todoPending, todoInProgress, todoCompleted int
 	cmd := &cobra.Command{
 		Use:          "agent-event",
 		SilenceUsage: true,
@@ -47,7 +47,6 @@ func newAgentEventHookCommand() *cobra.Command {
 						err = json.Unmarshal([]byte(todoJSON), &event.Todo.Tasks)
 					}
 				}
-				event.SubagentCount = subagentCount
 			}
 			if err == nil {
 				err = svc.HandleAgentEvent(cmd.Context(), event)
@@ -74,6 +73,5 @@ func newAgentEventHookCommand() *cobra.Command {
 	cmd.Flags().IntVar(&todoInProgress, "todo-in-progress", 0, "In-progress todo count")
 	cmd.Flags().IntVar(&todoCompleted, "todo-completed", 0, "Completed todo count")
 	cmd.Flags().StringVar(&todoJSON, "todo-json", "", "Visible todo tasks as JSON")
-	cmd.Flags().IntVar(&subagentCount, "subagent-count", 0, "Active subagent count")
 	return cmd
 }
