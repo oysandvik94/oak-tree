@@ -419,7 +419,8 @@ func TestDenseTableKeepsSelectedRowVisibleAndFitsCompactWidths(t *testing.T) {
 func TestDenseTableCountsUsePrioritySemanticsAndShowsWideData(t *testing.T) {
 	model := NewDashboardModel(&Service{}, Config{})
 	model.width, model.height = 140, 30
-	model.usage = UsageCache{Sessions: []UsageSession{{SessionID: "cost", TotalCostUSD: 1.25}}}
+	const usageID = "019fccbc-db8a-7ebd-af1d-19f562cf7927"
+	model.usage = UsageCache{Sessions: []UsageSession{{SessionID: usageID, TotalCostUSD: 1.25}}}
 	model.sessions = []Session{
 		{ID: "question", Root: "/repo/question", AgentStatus: AgentStatusQuestion, Tag: SessionTagWaitingReview},
 		{ID: "attention", Root: "/repo/attention", AgentStatus: AgentStatusAttention, Tag: SessionTagWaitingReview},
@@ -427,7 +428,7 @@ func TestDenseTableCountsUsePrioritySemanticsAndShowsWideData(t *testing.T) {
 		{ID: "working-review", Root: "/repo/working-review", Branch: "feature/review", AgentStatus: AgentStatusWorking, Tag: SessionTagWaitingReview},
 		{ID: "review", Root: "/repo/review", Tag: SessionTagWaitingReview},
 		{ID: "testing", Root: "/repo/testing", Tag: SessionTagTesting},
-		{ID: "idle", Root: "/repo/idle", AgentSessionIDs: []string{"cost"}, Todo: &TodoSummary{Total: 3, Pending: 1, InProgress: 1, Completed: 1}, GitStatus: &GitStatus{Clean: false, Ahead: 1}, PR: &PRInfo{Found: true, Number: 42, State: "OPEN"}},
+		{ID: "idle", Root: "/repo/idle", AgentSessionIDs: []string{usageID}, Todo: &TodoSummary{Total: 3, Pending: 1, InProgress: 1, Completed: 1}, GitStatus: &GitStatus{Clean: false, Ahead: 1}, PR: &PRInfo{Found: true, Number: 42, State: "OPEN"}},
 	}
 	rendered := model.View().Content
 	for _, want := range []string{"2 active", "needs-you 0", "working 1", "ready 1", "review 4", "testing 1", "REVIEW · 4 parked", "TESTING · 1 parked", "STATE", "SESSION", "BRANCH", "GIT", "PR", "TODO", "COST", "changes ↑", "#42 open", "◐ 1/3", "$1.25"} {

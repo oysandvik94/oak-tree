@@ -7,12 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
+	"regexp"
 	"strings"
 	"time"
 )
 
-const UsageCacheMaxAge = time.Minute
+const (
+	UsageCacheMaxAge = time.Minute
+	CcusageVersion   = "20.0.20"
+)
+
+var usageSessionIDPattern = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
 type UsageCache struct {
 	RefreshedAt  time.Time      `json:"refreshed_at"`
@@ -54,7 +59,7 @@ func (s *Service) RefreshUsage(ctx context.Context) (UsageCache, error) {
 	defer cancel()
 
 	now := time.Now().UTC()
-	data, err := s.Exec.Output(ctx, "bunx", "ccusage", "session", "--json")
+	data, err := s.Exec.Output(ctx, "bunx", "ccusage@"+CcusageVersion, "session", "--json")
 	if err != nil {
 		return UsageCache{}, err
 	}
@@ -68,6 +73,8 @@ func (s *Service) RefreshUsage(ctx context.Context) (UsageCache, error) {
 	return cache, nil
 }
 
+// ParseUsage accepts only the ccusage 20.0.20 `session --json` Pi row schema.
+// Do not guess aliases here: a schema change must make dashboard costs visibly unavailable.
 func ParseUsage(data []byte, now time.Time) (UsageCache, error) {
 	var root map[string]any
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -75,40 +82,51 @@ func ParseUsage(data []byte, now time.Time) (UsageCache, error) {
 	if err := decoder.Decode(&root); err != nil {
 		return UsageCache{}, err
 	}
+	rows, ok := root["session"].([]any)
+	if !ok {
+		return UsageCache{}, errors.New("ccusage session JSON missing session array")
+	}
 
 	cache := UsageCache{RefreshedAt: now.UTC()}
-	cache.TotalCostUSD = firstJSONNumber(root, "totalCostUSD", "totalCost", "costUSD")
-	if totals, ok := firstJSONMap(root, "totals", "summary"); ok {
-		if value := firstJSONNumber(totals, "totalCostUSD", "totalCost", "costUSD"); value > 0 {
-			cache.TotalCostUSD = value
-		}
-	}
-
-	for _, row := range firstJSONArray(root, "sessions", "session", "data") {
+	seen := make(map[string]struct{})
+	for index, row := range rows {
 		item, ok := row.(map[string]any)
 		if !ok {
+			return UsageCache{}, fmt.Errorf("ccusage session row %d is not an object", index)
+		}
+		agent, ok := item["agent"].(string)
+		if !ok {
+			return UsageCache{}, fmt.Errorf("ccusage session row %d missing agent", index)
+		}
+		if agent != "pi" {
 			continue
 		}
-		session := UsageSession{
-			SessionID:    firstJSONString(item, "sessionId", "sessionID", "session_id", "period", "id"),
-			TotalCostUSD: firstJSONNumber(item, "totalCostUSD", "totalCost", "costUSD"),
-			TotalTokens:  firstJSONInt(item, "totalTokens", "tokens"),
-			ModelsUsed:   firstJSONStringArray(item, "modelsUsed", "models"),
+		period, ok := item["period"].(string)
+		if !ok {
+			return UsageCache{}, fmt.Errorf("ccusage Pi session row %d missing period", index)
 		}
-		if session.TotalTokens == 0 {
-			session.TotalTokens = sumJSONInts(item, "inputTokens", "outputTokens", "cacheCreationInputTokens", "cacheReadInputTokens")
+		id := canonicalUsageSessionID(period)
+		if id == "" {
+			return UsageCache{}, fmt.Errorf("ccusage Pi session row %d has ambiguous period %q", index, period)
 		}
-		session.LastActivity = firstJSONTime(item, "lastActivity", "lastActivityAt", "updatedAt", "lastUsedAt")
-		if session.SessionID == "" && session.TotalCostUSD == 0 && session.TotalTokens == 0 {
-			continue
+		cost, ok := jsonNumber(item["totalCost"])
+		if !ok {
+			return UsageCache{}, fmt.Errorf("ccusage Pi session row %d missing numeric totalCost", index)
+		}
+		tokens, ok := jsonInt(item["totalTokens"])
+		if !ok {
+			return UsageCache{}, fmt.Errorf("ccusage Pi session row %d missing numeric totalTokens", index)
+		}
+		if _, duplicate := seen[id]; duplicate {
+			return UsageCache{}, fmt.Errorf("ccusage returned duplicate Pi session %q", id)
+		}
+		seen[id] = struct{}{}
+		session := UsageSession{SessionID: id, TotalCostUSD: cost, TotalTokens: tokens, ModelsUsed: firstJSONStringArray(item, "modelsUsed")}
+		if metadata, ok := item["metadata"].(map[string]any); ok {
+			session.LastActivity = firstJSONTime(metadata, "lastActivity")
 		}
 		cache.Sessions = append(cache.Sessions, session)
-	}
-
-	if cache.TotalCostUSD == 0 {
-		for _, session := range cache.Sessions {
-			cache.TotalCostUSD += session.TotalCostUSD
-		}
+		cache.TotalCostUSD += cost
 	}
 	return cache, nil
 }
@@ -151,26 +169,26 @@ func (c UsageCache) ForSessionIDs(ids []string) (UsageSession, bool) {
 }
 
 func usageSessionIDMatches(ids []string, candidate string) bool {
-	candidate = normalizeUsageSessionID(candidate)
+	candidate = canonicalUsageSessionID(candidate)
 	if candidate == "" {
 		return false
 	}
 	for _, id := range ids {
-		id = normalizeUsageSessionID(id)
-		if id == "" {
-			continue
-		}
-		if id == candidate || strings.HasSuffix(candidate, id) || strings.HasSuffix(id, candidate) {
+		if canonicalUsageSessionID(id) == candidate {
 			return true
 		}
 	}
 	return false
 }
 
-func normalizeUsageSessionID(value string) string {
-	value = strings.TrimSpace(value)
-	value = strings.Trim(value, `"'`)
-	return value
+// canonicalUsageSessionID accepts a raw UUID or exactly one UUID embedded in a
+// known session-file path. Broad suffix matching can charge another session.
+func canonicalUsageSessionID(value string) string {
+	matches := usageSessionIDPattern.FindAllString(value, -1)
+	if len(matches) != 1 {
+		return ""
+	}
+	return strings.ToLower(matches[0])
 }
 
 func formatUSD(value float64) string {
@@ -186,128 +204,44 @@ func formatUSD(value float64) string {
 	return fmt.Sprintf("$%.2f", value)
 }
 
-func firstJSONMap(value map[string]any, keys ...string) (map[string]any, bool) {
-	for _, key := range keys {
-		if child, ok := value[key].(map[string]any); ok {
-			return child, true
-		}
+func jsonNumber(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case json.Number:
+		parsed, err := typed.Float64()
+		return parsed, err == nil
+	case float64:
+		return typed, true
 	}
-	return nil, false
+	return 0, false
 }
 
-func firstJSONArray(value map[string]any, keys ...string) []any {
-	for _, key := range keys {
-		if items, ok := value[key].([]any); ok {
-			return items
-		}
+func jsonInt(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case json.Number:
+		parsed, err := typed.Int64()
+		return parsed, err == nil
+	case float64:
+		return int64(typed), typed == float64(int64(typed))
 	}
-	return nil
-}
-
-func firstJSONString(value map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if text, ok := value[key].(string); ok && strings.TrimSpace(text) != "" {
-			return strings.TrimSpace(text)
-		}
-	}
-	return ""
+	return 0, false
 }
 
 func firstJSONStringArray(value map[string]any, keys ...string) []string {
 	for _, key := range keys {
-		raw, ok := value[key]
+		items, ok := value[key].([]any)
 		if !ok {
 			continue
 		}
-		switch typed := raw.(type) {
-		case []any:
-			var out []string
-			for _, item := range typed {
-				switch value := item.(type) {
-				case string:
-					if strings.TrimSpace(value) != "" {
-						out = append(out, strings.TrimSpace(value))
-					}
-				case map[string]any:
-					if model := firstJSONString(value, "model", "name", "id"); model != "" {
-						out = append(out, model)
-					}
-				}
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			text, ok := item.(string)
+			if ok && strings.TrimSpace(text) != "" {
+				out = append(out, strings.TrimSpace(text))
 			}
-			return dedupeStrings(out)
-		case []string:
-			return dedupeStrings(typed)
 		}
+		return dedupeStrings(out)
 	}
 	return nil
-}
-
-func firstJSONNumber(value map[string]any, keys ...string) float64 {
-	for _, key := range keys {
-		raw, ok := value[key]
-		if !ok {
-			continue
-		}
-		switch typed := raw.(type) {
-		case json.Number:
-			parsed, err := typed.Float64()
-			if err == nil {
-				return parsed
-			}
-		case float64:
-			return typed
-		case int:
-			return float64(typed)
-		case int64:
-			return float64(typed)
-		case string:
-			parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
-			if err == nil {
-				return parsed
-			}
-		}
-	}
-	return 0
-}
-
-func firstJSONInt(value map[string]any, keys ...string) int64 {
-	for _, key := range keys {
-		raw, ok := value[key]
-		if !ok {
-			continue
-		}
-		switch typed := raw.(type) {
-		case json.Number:
-			parsed, err := typed.Int64()
-			if err == nil {
-				return parsed
-			}
-			floatValue, err := typed.Float64()
-			if err == nil {
-				return int64(floatValue)
-			}
-		case float64:
-			return int64(typed)
-		case int:
-			return int64(typed)
-		case int64:
-			return typed
-		case string:
-			parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
-			if err == nil {
-				return parsed
-			}
-		}
-	}
-	return 0
-}
-
-func sumJSONInts(value map[string]any, keys ...string) int64 {
-	var total int64
-	for _, key := range keys {
-		total += firstJSONInt(value, key)
-	}
-	return total
 }
 
 func firstJSONTime(value map[string]any, keys ...string) time.Time {

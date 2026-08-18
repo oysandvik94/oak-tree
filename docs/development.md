@@ -53,7 +53,20 @@ Pi integration requires an installed `pi` binary and a durable `oak-tree` execut
 6. Exercise `/new`, `/resume`, and `/fork`; confirm the current Pi session id/file is recorded on the same oak-tree session JSON.
 7. Exit Pi and confirm the dashboard changes to `idle`.
 
-Confirm each linked session row shows its `ccusage` cost after the background usage refresh completes. The selected row should be highlighted, and rows should not repeat a `tmux` label.
+Confirm each linked session row shows its `ccusage@20.0.20` cost after the background usage refresh completes. The selected row should be highlighted, and rows should not repeat a `tmux` label. A row is matched only when its stored Pi session ID is the same UUID as `ccusage`'s `period`; a path is accepted only if it embeds exactly one UUID.
+
+## Usage Accounting
+
+The dashboard deliberately parses the pinned `ccusage@20.0.20 session --json` Pi row schema and fails its refresh on a schema change rather than guessing field aliases. Its cost is scoped to the Pi session IDs stored on that oak-tree session; it is not the global Waybar amount.
+
+For global Pi reconciliation and fork fixtures, use the dotfiles helper from the dotfiles checkout:
+
+```sh
+python3 scripts/test_pi_usage.py
+python3 scripts/pi_usage.py --timezone Europe/Oslo report --since 2026-08-01 --until 2026-08-31
+```
+
+The report is local-only: do not commit its output because it contains local session paths. It records the scanned root, excluded copied entry identities, and the pinned ccusage comparison.
 
 ## Testing Guidance
 

@@ -11,78 +11,52 @@ import (
 func TestParseUsageSessionJSON(t *testing.T) {
 	now := testTime()
 	cache, err := ParseUsage([]byte(`{
-		"totals": {"totalCost": 9.87},
-		"sessions": [
-			{
-				"sessionId": "pi-1",
-				"totalCost": 1.23,
-				"inputTokens": 100,
-				"outputTokens": 25,
-				"cacheCreationInputTokens": 5,
-				"cacheReadInputTokens": 10,
-				"modelsUsed": ["[pi] gpt-5.6-sol"],
-				"lastActivity": "2026-06-25T12:30:00Z"
-			}
-		]
+		"session": [{
+			"agent": "pi",
+			"period": "/home/user/sessions/019fccbc-db8a-7ebd-af1d-19f562cf7927.jsonl",
+			"totalCost": 1.23,
+			"totalTokens": 140,
+			"modelsUsed": ["[pi] gpt-5.6-sol"],
+			"metadata": {"lastActivity": "2026-06-25T12:30:00Z"}
+		}]
 	}`), now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cache.RefreshedAt.Equal(now.UTC()) {
-		t.Fatalf("RefreshedAt = %s, want %s", cache.RefreshedAt, now.UTC())
-	}
-	if cache.TotalCostUSD != 9.87 {
-		t.Fatalf("TotalCostUSD = %v, want 9.87", cache.TotalCostUSD)
-	}
-	if len(cache.Sessions) != 1 {
-		t.Fatalf("Sessions len = %d, want 1", len(cache.Sessions))
+	if !cache.RefreshedAt.Equal(now.UTC()) || cache.TotalCostUSD != 1.23 || len(cache.Sessions) != 1 {
+		t.Fatalf("cache = %#v, want one parsed Pi session", cache)
 	}
 	session := cache.Sessions[0]
-	if session.SessionID != "pi-1" || session.TotalCostUSD != 1.23 || session.TotalTokens != 140 {
-		t.Fatalf("session = %#v, want parsed cost and token total", session)
-	}
-	if len(session.ModelsUsed) != 1 || session.ModelsUsed[0] != "[pi] gpt-5.6-sol" {
-		t.Fatalf("ModelsUsed = %#v, want [pi] gpt-5.6-sol", session.ModelsUsed)
+	if session.SessionID != "019fccbc-db8a-7ebd-af1d-19f562cf7927" || session.TotalTokens != 140 || len(session.ModelsUsed) != 1 {
+		t.Fatalf("session = %#v, want canonical parsed session", session)
 	}
 }
 
-func TestParseUsageUnifiedPiSessionJSON(t *testing.T) {
-	cache, err := ParseUsage([]byte(`{
-		"totals": {"totalCost": 4.56},
-		"session": [{
-			"agent": "pi",
-			"period": "pi-1",
-			"totalCost": 1.23,
-			"totalTokens": 140,
-			"modelsUsed": ["[pi] gpt-5.6-sol"]
-		}]
-	}`), testTime())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cache.Sessions) != 1 || cache.Sessions[0].SessionID != "pi-1" || cache.Sessions[0].TotalCostUSD != 1.23 {
-		t.Fatalf("session = %#v, want parsed Pi usage", cache.Sessions)
+func TestParseUsageRejectsSchemaDrift(t *testing.T) {
+	_, err := ParseUsage([]byte(`{"sessions":[{"sessionId":"pi-1"}]}`), testTime())
+	if err == nil {
+		t.Fatal("ParseUsage() error = nil, want schema error")
 	}
 }
 
-func TestUsageCacheForSessionIDsMergesMatches(t *testing.T) {
-	cache := UsageCache{
-		Sessions: []UsageSession{
-			{SessionID: "pi-1", TotalCostUSD: 1.20, TotalTokens: 100, ModelsUsed: []string{"one"}},
-			{SessionID: "path/pi-1", TotalCostUSD: 2.30, TotalTokens: 200, ModelsUsed: []string{"one", "two"}},
-			{SessionID: "pi-2", TotalCostUSD: 9},
-		},
-	}
+func TestUsageCacheForSessionIDsUsesExactCanonicalIDs(t *testing.T) {
+	first := "019fccbc-db8a-7ebd-af1d-19f562cf7927"
+	second := "019fccc2-e93f-7b01-8247-7393ea4f0c4f"
+	cache := UsageCache{Sessions: []UsageSession{
+		{SessionID: first, TotalCostUSD: 1.20, TotalTokens: 100, ModelsUsed: []string{"one"}},
+		{SessionID: second, TotalCostUSD: 2.30, TotalTokens: 200, ModelsUsed: []string{"two"}},
+	}}
 
-	usage, ok := cache.ForSessionIDs([]string{"pi-1"})
-	if !ok {
-		t.Fatal("ForSessionIDs() ok = false, want true")
+	usage, ok := cache.ForSessionIDs([]string{first, first})
+	if !ok || usage.TotalCostUSD != 1.20 || usage.TotalTokens != 100 {
+		t.Fatalf("usage = %#v, want only one explicit session", usage)
 	}
-	if usage.TotalCostUSD != 3.50 || usage.TotalTokens != 300 {
-		t.Fatalf("usage = %#v, want merged matching rows", usage)
+	if _, ok := cache.ForSessionIDs([]string{"prefix-" + first[:8]}); ok {
+		t.Fatal("ForSessionIDs() matched a prefix collision")
 	}
-	if len(usage.ModelsUsed) != 2 {
-		t.Fatalf("ModelsUsed = %#v, want deduped models", usage.ModelsUsed)
+	usage, ok = cache.ForSessionIDs([]string{"/tmp/" + first + ".jsonl", second})
+	if !ok || usage.TotalCostUSD != 3.50 || usage.TotalTokens != 300 {
+		t.Fatalf("usage = %#v, want two explicit canonical IDs", usage)
 	}
 }
 
@@ -95,11 +69,11 @@ func TestRefreshUsageRunsBunxAndCachesResult(t *testing.T) {
 			if name != "bunx" {
 				t.Fatalf("command = %s, want bunx", name)
 			}
-			want := []string{"ccusage", "session", "--json"}
+			want := []string{"ccusage@" + CcusageVersion, "session", "--json"}
 			if !stringSlicesEqual(args, want) {
 				t.Fatalf("args = %#v, want %#v", args, want)
 			}
-			return []byte(`{"session":[{"agent":"pi","period":"pi-1","totalCost":4.56}]}`), nil
+			return []byte(`{"session":[{"agent":"pi","period":"019fccbc-db8a-7ebd-af1d-19f562cf7927","totalCost":4.56,"totalTokens":10}]}`), nil
 		},
 	}
 	svc := NewService(paths, store, runner)
@@ -115,7 +89,7 @@ func TestRefreshUsageRunsBunxAndCachesResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(loaded.Sessions) != 1 || loaded.Sessions[0].SessionID != "pi-1" {
+	if len(loaded.Sessions) != 1 || loaded.Sessions[0].SessionID != "019fccbc-db8a-7ebd-af1d-19f562cf7927" {
 		t.Fatalf("loaded cache = %#v, want persisted usage", loaded)
 	}
 	if _, err := os.Stat(UsageCacheFilePath(stateDir)); err != nil {
