@@ -30,6 +30,12 @@ type createResultMsg struct {
 	err     error
 }
 
+type branchListMsg struct {
+	root     string
+	branches []string
+	err      error
+}
+
 type closeResultMsg struct {
 	sessionID string
 	err       error
@@ -131,6 +137,10 @@ type createForm struct {
 	rootList         list.Model
 	rootCandidates   []rootCandidate
 	filtered         []rootCandidate
+	branchCandidates []string
+	filteredBranches []string
+	branchCursor     int
+	branchesLoading  bool
 	selectedRootPath string
 }
 
@@ -290,6 +300,35 @@ func (f *createForm) toggleBranchMode() {
 		return
 	}
 	f.branchMode = BranchModeOpenExisting
+	f.applyBranchFilter()
+}
+
+func (f *createForm) applyBranchFilter() {
+	ranks := list.DefaultFilter(strings.TrimSpace(f.branch.Value()), f.branchCandidates)
+	f.filteredBranches = make([]string, 0, len(ranks))
+	for _, rank := range ranks {
+		f.filteredBranches = append(f.filteredBranches, f.branchCandidates[rank.Index])
+	}
+	f.branchCursor = 0
+}
+
+func (f *createForm) selectedBranch() string {
+	if f.branchMode == BranchModeOpenExisting && f.branchCursor < len(f.filteredBranches) {
+		return f.filteredBranches[f.branchCursor]
+	}
+	return strings.TrimSpace(f.branch.Value())
+}
+
+func (f *createForm) moveBranchCursor(key string) {
+	if len(f.filteredBranches) == 0 {
+		return
+	}
+	if key == "up" && f.branchCursor > 0 {
+		f.branchCursor--
+	}
+	if key == "down" && f.branchCursor+1 < len(f.filteredBranches) {
+		f.branchCursor++
+	}
 }
 
 func (f createForm) branchModeLabel() string {
@@ -340,7 +379,7 @@ func (f *createForm) stageHelp() string {
 		}
 		return dim.Render("enter continues   esc cancel")
 	case createStageBranch:
-		return dim.Render("enter launches session   ctrl+o mode   tab change root   esc cancel")
+		return dim.Render("enter launches session   ctrl+o mode   ↑/↓ select   tab change root   esc cancel")
 	default:
 		return ""
 	}
@@ -377,10 +416,37 @@ func (f *createForm) render() string {
 		b.WriteString(renderTinyPill(strings.ToUpper(f.branchModeLabel()), f.branchModeColor()))
 		b.WriteByte('\n')
 		b.WriteString(f.branch.View())
+		if f.branchMode == BranchModeOpenExisting {
+			b.WriteByte('\n')
+			b.WriteString(f.renderBranchCandidates())
+		}
 	}
 	b.WriteByte('\n')
 	b.WriteString(f.stageHelp())
 	return panel.Render(b.String())
+}
+
+func (f *createForm) renderBranchCandidates() string {
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	if f.branchesLoading {
+		return dim.Render("loading branches…")
+	}
+	if len(f.filteredBranches) == 0 {
+		return dim.Render("No matching branches; type a branch name manually.")
+	}
+	start := max(0, f.branchCursor-2)
+	end := min(len(f.filteredBranches), start+5)
+	lines := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		prefix := "  "
+		style := dim
+		if i == f.branchCursor {
+			prefix = "▸ "
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Bold(true)
+		}
+		lines = append(lines, style.Render(prefix+f.filteredBranches[i]))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (f *createForm) stageLabel() string {
@@ -572,6 +638,13 @@ func (m DashboardModel) animationTickCmd() tea.Cmd {
 	return tea.Tick(animationTickInterval, func(time.Time) tea.Msg {
 		return animationTickMsg{}
 	})
+}
+
+func (m DashboardModel) branchListCmd(root string) tea.Cmd {
+	return func() tea.Msg {
+		branches, err := ExistingBranches(context.Background(), m.svc.Exec, root)
+		return branchListMsg{root: root, branches: branches, err: err}
+	}
 }
 
 func (m DashboardModel) createCmd(root, branch string, branchMode BranchMode) tea.Cmd {
@@ -994,6 +1067,19 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(prCmds...)
 		}
 		return m, nil
+	case branchListMsg:
+		if m.mode != modeCreate || m.form.selectedRootPath != msg.root {
+			return m, nil
+		}
+		m.form.branchesLoading = false
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.err = nil
+		m.form.branchCandidates = msg.branches
+		m.form.applyBranchFilter()
+		return m.withAnimationCmd()
 	case createResultMsg:
 		m.creating = false
 		if msg.err != nil {
@@ -1379,6 +1465,10 @@ func (m DashboardModel) updateCreate(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.form.stage == createStageBranch {
 			m.form.toggleBranchMode()
 			m.err = nil
+			if m.form.branchMode == BranchModeOpenExisting && len(m.form.branchCandidates) == 0 {
+				m.form.branchesLoading = true
+				return m.withAnimationCmd(m.branchListCmd(m.form.selectedRootPath))
+			}
 			return m.withAnimationCmd()
 		}
 		return m, nil
@@ -1394,7 +1484,14 @@ func (m DashboardModel) updateCreate(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.err = fmt.Errorf("root is required")
 				return m, nil
 			}
-			branch := strings.TrimSpace(m.form.branch.Value())
+			if m.form.branchMode == BranchModeOpenExisting && m.form.branchesLoading {
+				return m, nil
+			}
+			branch := m.form.selectedBranch()
+			if m.form.branchMode == BranchModeOpenExisting && branch == "" {
+				m.err = fmt.Errorf("select or enter a branch")
+				return m, nil
+			}
 			m.creating = true
 			m.mode = modeDashboard
 			if m.form.branchMode == BranchModeOpenExisting {
@@ -1429,8 +1526,16 @@ func (m DashboardModel) updateCreate(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		return m, cmd
 	case createStageBranch:
+		if m.form.branchMode == BranchModeOpenExisting && (msg.String() == "up" || msg.String() == "down") {
+			m.form.moveBranchCursor(msg.String())
+			return m.withAnimationCmd()
+		}
+		old := m.form.branch.Value()
 		var cmd tea.Cmd
 		m.form.branch, cmd = m.form.branch.Update(msg)
+		if m.form.branchMode == BranchModeOpenExisting && m.form.branch.Value() != old {
+			m.form.applyBranchFilter()
+		}
 		m.err = nil
 		return m, cmd
 	}

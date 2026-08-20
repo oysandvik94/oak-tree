@@ -44,6 +44,21 @@ func (r *stubRunner) Run(ctx context.Context, name string, args ...string) error
 	return nil
 }
 
+func TestExistingBranchesCombinesLocalAndOriginBranches(t *testing.T) {
+	runner := &stubRunner{outputFunc: func(name string, args []string) ([]byte, error) {
+		return []byte("main\nfeature/local\norigin/HEAD\norigin/main\norigin/feature/remote\n"), nil
+	}}
+
+	got, err := ExistingBranches(context.Background(), runner, "/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"feature/local", "feature/remote", "main"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ExistingBranches() = %#v, want %#v", got, want)
+	}
+}
+
 func TestParseGitStatusPorcelainCountsDirtyEntries(t *testing.T) {
 	status := parseGitStatusPorcelain("## main...origin/main [ahead 2]\n M tracked.go\nA  added.go\n?? notes.txt\nR  old.go -> new.go\n")
 

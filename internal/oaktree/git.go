@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +75,25 @@ func CurrentBranch(ctx context.Context, runner Runner, workdir string) (string, 
 		return "", err
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+func ExistingBranches(ctx context.Context, runner Runner, root string) ([]string, error) {
+	data, err := runner.Output(ctx, "git", "-C", root, "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes/origin")
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var branches []string
+	for _, branch := range strings.Fields(string(data)) {
+		branch = strings.TrimPrefix(branch, "origin/")
+		if branch == "HEAD" || seen[branch] {
+			continue
+		}
+		seen[branch] = true
+		branches = append(branches, branch)
+	}
+	sort.Strings(branches)
+	return branches, nil
 }
 
 func CreateWorktree(ctx context.Context, runner Runner, paths Paths, root, branch string) (string, error) {

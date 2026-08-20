@@ -29,7 +29,7 @@
 
 ## Open Existing Branch
 
-1. User selects a root directory, enters a branch name, and toggles the dashboard branch mode to open existing.
+1. User selects a root directory and toggles the dashboard branch mode to open existing. The branch field fuzzy-filters local branches and cached `origin/*` branches for that repository; manual entry remains available when a branch is not listed.
 2. oak-tree checks `git worktree list --porcelain` to see whether the branch is already checked out in another worktree.
 3. If it is checked out, oak-tree starts the tmux session in that worktree and records it as not owned by oak-tree.
 4. If it is not checked out, oak-tree checks whether the branch exists locally or on `origin`.

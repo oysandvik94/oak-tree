@@ -94,6 +94,23 @@ func TestCreateFormBranchModeToggleRendersOpenExisting(t *testing.T) {
 	}
 }
 
+func TestOpenExistingBranchModeFuzzySelectsBranch(t *testing.T) {
+	form := newCreateForm(nil, 80, 24)
+	form.selectedRootPath = "/repo/oak-tree"
+	form.stage = createStageBranch
+	form.branchCandidates = []string{"feature/short", "feature/very-long-existing-branch", "main"}
+	form.toggleBranchMode()
+	form.branch.SetValue("long")
+	form.applyBranchFilter()
+
+	if got, want := form.selectedBranch(), "feature/very-long-existing-branch"; got != want {
+		t.Fatalf("selectedBranch() = %q, want %q", got, want)
+	}
+	if rendered := form.render(); !strings.Contains(rendered, "feature/very-long-existing-branch") {
+		t.Fatalf("render() = %q, want matching branch", rendered)
+	}
+}
+
 func TestViewPinsFooterToBottom(t *testing.T) {
 	for _, width := range []int{80, 160} {
 		model := NewDashboardModel(&Service{}, Config{})
