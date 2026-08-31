@@ -7,30 +7,35 @@ import (
 	"path/filepath"
 )
 
-// PiExtensionSource is kept in the binary so a Pi session never depends on a
-// mutable global Pi configuration or a checked-out oak-tree source tree.
+// PiExtensionSource is kept in the binary so Pi sessions never depend on a
+// checked-out oak-tree source tree.
 const PiExtensionSource = `import { Type } from "typebox";
 
 export default function (pi) {
+  const oak = process.env.OAK_TREE_SESSION_ID;
+  const tmuxPane = process.env.TMUX_PANE;
+  let registered = Boolean(oak);
   async function hook(event, extra = {}) {
-    const oak = process.env.OAK_TREE_SESSION_ID;
-    if (!oak) return;
+    if (!registered || (!oak && !tmuxPane)) return false;
     const command = process.env.OAK_TREE_HOOK || "oak-tree";
-    const args = ["hook", "agent-event", "--oak-session", oak, "--event", event];
+    const args = ["hook", "agent-event", "--event", event];
+    if (oak) args.push("--oak-session", oak);
     for (const [key, value] of Object.entries(extra)) {
       if (value === undefined || value === null || value === "") continue;
-      if (!["cwd", "session_id", "session_file", "todo_total", "todo_pending", "todo_in_progress", "todo_completed", "todo_json"].includes(key)) continue;
+      if (!["tmux_pane", "cwd", "session_id", "session_file", "todo_total", "todo_pending", "todo_in_progress", "todo_completed", "todo_json"].includes(key)) continue;
       args.push("--" + key.replaceAll("_", "-"), String(value));
     }
     for (let attempt = 0; attempt < 20; attempt++) {
       try {
         const result = await pi.exec(command, args, { timeout: 2000 });
-        if (result.code === 0) return;
+        if (result.code === 0) return true;
       } catch (_) {}
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
+    return false;
   }
   const identity = (ctx) => ({
+    tmux_pane: tmuxPane,
     cwd: ctx.cwd,
     session_id: ctx.sessionManager.getSessionId(),
     session_file: ctx.sessionManager.getSessionFile(),
@@ -54,9 +59,14 @@ export default function (pi) {
     const summary = todoSummary(details);
     if (summary) await hook("todo", { ...identity(ctx), ...summary });
   };
-  pi.on("session_start", async (_event, ctx) => {
+  async function start(ctx) {
     currentIdentity = identity(ctx);
-    await hook("session_start", currentIdentity);
+    const wasRegistered = registered;
+    registered = true;
+    if (!await hook("session_start", currentIdentity)) {
+      registered = wasRegistered;
+      return false;
+    }
     let latest = { tasks: [] };
     for (const entry of ctx.sessionManager.getBranch()) {
       const message = entry?.type === "message" ? entry.message : undefined;
@@ -64,6 +74,25 @@ export default function (pi) {
     }
     await reportTodos(ctx, latest);
     if (!pi.getAllTools().some((tool) => tool.name === "ask_user_question")) registerQuestionTool();
+    return true;
+  }
+  pi.on("session_start", async (_event, ctx) => {
+    if (oak) await start(ctx);
+  });
+  pi.registerCommand("oak-tree", {
+    description: "Register this Pi session with the current oak-tree tmux session",
+    handler: async (args, ctx) => {
+      if (args.trim() !== "register") {
+        ctx.ui.notify("Usage: /oak-tree register", "warning");
+        return;
+      }
+      if (!tmuxPane) {
+        ctx.ui.notify("Not running inside tmux", "error");
+        return;
+      }
+      const success = await start(ctx);
+      ctx.ui.notify(success ? "Registered with oak-tree" : "Could not register with oak-tree", success ? "info" : "error");
+    },
   });
   pi.on("agent_start", async (_event, ctx) => { await hook("agent_start", identity(ctx)); });
   pi.on("agent_settled", async (_event, ctx) => { await hook("agent_settled", identity(ctx)); });
@@ -128,10 +157,22 @@ func PiExtensionPath(paths Paths) string {
 	return filepath.Join(dir, "oak-tree-extension.ts")
 }
 
+func PiAutoExtensionPath(paths Paths) string {
+	if paths.PiExtensionsDir == "" {
+		return ""
+	}
+	return filepath.Join(paths.PiExtensionsDir, "oak-tree.ts")
+}
+
 func EnsurePiExtension(paths Paths) (string, error) {
 	path := PiExtensionPath(paths)
 	if err := atomicWrite(path, []byte(PiExtensionSource), 0o600); err != nil {
 		return "", err
+	}
+	if autoPath := PiAutoExtensionPath(paths); autoPath != "" {
+		if err := atomicWrite(autoPath, []byte(PiExtensionSource), 0o600); err != nil {
+			return "", err
+		}
 	}
 	return path, nil
 }
@@ -140,13 +181,12 @@ func PiCommand(ctx context.Context, paths Paths, sessionID string) ([]string, er
 	if _, err := osexec.LookPath("pi"); err != nil {
 		return nil, fmt.Errorf("Pi CLI is not installed or not on PATH: %w", err)
 	}
-	extension, err := EnsurePiExtension(paths)
-	if err != nil {
+	if _, err := EnsurePiExtension(paths); err != nil {
 		return nil, fmt.Errorf("prepare Pi extension: %w", err)
 	}
 	hook, err := hookExecutable()
 	if err != nil {
 		return nil, fmt.Errorf("prepare Pi hook executable: %w", err)
 	}
-	return []string{"env", "OAK_TREE_SESSION_ID=" + sessionID, "OAK_TREE_HOOK=" + hook, "pi", "-e", extension}, nil
+	return []string{"env", "OAK_TREE_SESSION_ID=" + sessionID, "OAK_TREE_HOOK=" + hook, "pi"}, nil
 }

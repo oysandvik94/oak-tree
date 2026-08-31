@@ -11,11 +11,12 @@ import (
 )
 
 type Paths struct {
-	StateDir     string
-	SessionsDir  string
-	WorktreesDir string
-	HooksDir     string
-	PiDir        string
+	StateDir        string
+	SessionsDir     string
+	WorktreesDir    string
+	HooksDir        string
+	PiDir           string
+	PiExtensionsDir string
 }
 
 func DefaultPaths(explicit string) (Paths, error) {
@@ -35,12 +36,21 @@ func DefaultPaths(explicit string) (Paths, error) {
 	if err != nil {
 		return Paths{}, err
 	}
+	piDir := os.Getenv("PI_CODING_AGENT_DIR")
+	if piDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return Paths{}, err
+		}
+		piDir = filepath.Join(home, ".pi", "agent")
+	}
 	return Paths{
-		StateDir:     stateDir,
-		SessionsDir:  filepath.Join(stateDir, "sessions"),
-		WorktreesDir: filepath.Join(stateDir, "worktrees"),
-		HooksDir:     filepath.Join(stateDir, "hooks"),
-		PiDir:        filepath.Join(stateDir, "pi"),
+		StateDir:        stateDir,
+		SessionsDir:     filepath.Join(stateDir, "sessions"),
+		WorktreesDir:    filepath.Join(stateDir, "worktrees"),
+		HooksDir:        filepath.Join(stateDir, "hooks"),
+		PiDir:           filepath.Join(stateDir, "pi"),
+		PiExtensionsDir: filepath.Join(piDir, "extensions"),
 	}, nil
 }
 

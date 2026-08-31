@@ -154,6 +154,8 @@ Session rows show coding-agent turn status next to `tmux`:
 
 `working` is set when Pi starts a turn. `ready` means no turn is running and the session is available for your next action. Pi consumes the `rpiv:ask-user:prompt` event from `@juicesharp/rpiv-ask-user-question`; when that tool is unavailable, oak-tree registers a simpler `question` fallback. Pi prose questions retain a conservative pane fallback. When a session first changes to `question`, oak-tree runs `notify-send` with a desktop notification.
 
+If you close Pi and start another Pi process inside the same oak-tree tmux session, run `/oak-tree register` in the replacement process. Oak-tree then tracks its lifecycle, usage, and pane in the existing dashboard row.
+
 ## Todo Status
 
 For Pi sessions using `@juicesharp/rpiv-todo`, the wide dashboard table shows completed and total tasks in a `TODO` column. `◐ 1/3` means a task is in progress, `○ 1/3` means work is pending with nothing active, and `✓ 3/3` means all tasks are complete. Press `space` on a session with todo details to expand or collapse its task subjects inline. Oak-tree restores the latest todo snapshot when Pi starts and updates it after each successful `todo` tool call. Compact layouts hide the summary column.
@@ -240,7 +242,7 @@ tail -50 ~/.local/state/oak-tree/logs/oak-tree.log
 ## Current Limitations
 
 - v1 shows only sessions created or registered by oak-tree.
-- Pi is launched with oak-tree's private extension.
+- Oak-tree installs its Pi extension globally so replacement Pi processes can use `/oak-tree register`; outside managed sessions it remains inert.
 - The editor command is currently fixed to `nvim`.
 - Live tmux behavior should be manually tested after changes that touch tmux commands or dashboard preview.
 

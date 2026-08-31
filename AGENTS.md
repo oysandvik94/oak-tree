@@ -13,7 +13,7 @@
 - New sessions accept a root directory and optional branch.
 - If a branch is supplied, oak-tree fetches the latest default branch and creates a git worktree under oak-tree state.
 - Closing a session kills the tmux session and removes oak-tree-owned worktrees, but keeps the local branch. If the dashboard popup is hosted by that session, the client first switches to a nearby remaining oak-tree session.
-- Pi sessions use a state-owned extension and `oak-tree hook agent-event`. The extension also forwards `@juicesharp/rpiv-todo` task snapshots from persisted `todo` tool results.
+- Pi sessions use a state-owned, globally auto-discovered extension and `oak-tree hook agent-event`. Replacement Pi processes in the same managed tmux session can attach with `/oak-tree register`. The extension also forwards `@juicesharp/rpiv-todo` task snapshots from persisted `todo` tool results.
 - Session JSON stores generic `agent_session_ids` and may include a one-line `note`; kanban cards show a highlighted note icon and `e` opens the note popup.
 - Dashboard root selection uses `~/.config/oak-tree/config.toml`: `root_search_dirs` contributes immediate child directories, while `roots` contributes exact directories.
 - Dashboard agent states are `QUESTION`, `WORKING`, and `READY`. Manually tagged `REVIEW` and `TESTING` sessions are excluded from the active count and grouped in separate parked sections below active sessions.

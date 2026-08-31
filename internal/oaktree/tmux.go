@@ -36,6 +36,10 @@ func PaneIdCommandArgs(target string) []string {
 	return []string{"display-message", "-p", "-t", target, "#{pane_id}"}
 }
 
+func PaneSessionIdCommandArgs(target string) []string {
+	return []string{"display-message", "-p", "-t", target, "#{session_id}"}
+}
+
 func CapturePaneArgs(target string, lines int) []string {
 	return []string{"capture-pane", "-p", "-J", "-t", target, "-S", fmt.Sprintf("-%d", lines)}
 }

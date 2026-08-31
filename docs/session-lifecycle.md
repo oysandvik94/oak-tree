@@ -76,7 +76,11 @@ CLI creation does not require or consult `root_search_dirs` or `roots`.
 
 ## Pi lifecycle
 
-Pi is launched with the state-owned extension and receives `OAK_TREE_SESSION_ID`; the extension sends lifecycle events to `oak-tree hook agent-event`, including Pi's session id and session file. This keeps `/new`, `/resume`, and `/fork` linked to the same oak-tree session. The extension consumes `@juicesharp/rpiv-ask-user-question`'s `rpiv:ask-user:prompt` event and observes that tool's completion. When `ask_user_question` is unavailable, it registers a simpler `question` fallback. Answering or cancelling either UI restores `working`. `agent_settled` is represented as `attention` and sends a best-effort desktop notification; shutdown is `idle`. Ordinary prose prompts still use the pane heuristic as a fallback.
+Oak-tree installs its state-owned extension into Pi's global extension directory and launches Pi with `OAK_TREE_SESSION_ID`. The extension sends lifecycle events to `oak-tree hook agent-event`, including Pi's session id and session file. This keeps `/new`, `/resume`, and `/fork` linked to the same oak-tree session.
+
+If Pi is closed and restarted manually inside the same oak-tree tmux session, run `/oak-tree register`. The extension resolves the oak-tree session from the current tmux pane, replaces the recorded Pi pane, and starts reporting the replacement Pi session's lifecycle and usage identity. The command fails outside tmux or when the tmux session is not managed by oak-tree.
+
+The extension consumes `@juicesharp/rpiv-ask-user-question`'s `rpiv:ask-user:prompt` event and observes that tool's completion. When `ask_user_question` is unavailable, it registers a simpler `question` fallback. Answering or cancelling either UI restores `working`. `agent_settled` is represented as `attention` and sends a best-effort desktop notification; shutdown is `idle`. Ordinary prose prompts still use the pane heuristic as a fallback.
 
 When `@juicesharp/rpiv-todo` is loaded, the same extension reads the latest persisted `todo` tool-result details during `session_start` and after each successful `todo` execution. It sends visible task subjects, statuses, and counts through the agent-event hook. Deleted tasks are ignored; invalid count summaries are rejected at the hook boundary.
 

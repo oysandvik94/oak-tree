@@ -12,6 +12,7 @@ import (
 
 type AgentEvent struct {
 	OakSessionID string       `json:"oak_session_id"`
+	TmuxPaneID   string       `json:"tmux_pane_id,omitempty"`
 	Event        string       `json:"event"`
 	Cwd          string       `json:"cwd,omitempty"`
 	SessionID    string       `json:"session_id,omitempty"`
@@ -30,9 +31,37 @@ func ParseAgentEvent(r io.Reader) (AgentEvent, error) {
 	return event, nil
 }
 
+func (s *Service) ResolveOakSessionID(ctx context.Context, paneID string) (string, error) {
+	if strings.TrimSpace(paneID) == "" {
+		return "", errors.New("agent event missing oak_session_id and tmux_pane_id")
+	}
+	output, err := s.Exec.Output(ctx, "tmux", PaneSessionIdCommandArgs(paneID)...)
+	if err != nil {
+		return "", fmt.Errorf("resolve tmux session for pane %s: %w", paneID, err)
+	}
+	tmuxSessionID := strings.TrimSpace(string(output))
+	if tmuxSessionID == "" {
+		return "", errors.New("tmux did not return a session id")
+	}
+	sessions, err := s.Store.ListSessions()
+	if err != nil {
+		return "", err
+	}
+	for _, session := range sessions {
+		if session.TmuxSessionID == tmuxSessionID {
+			return session.ID, nil
+		}
+	}
+	return "", errors.New("current tmux session is not managed by oak-tree")
+}
+
 func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error {
 	if strings.TrimSpace(event.OakSessionID) == "" {
-		return errors.New("agent event missing oak_session_id")
+		var err error
+		event.OakSessionID, err = s.ResolveOakSessionID(ctx, event.TmuxPaneID)
+		if err != nil {
+			return err
+		}
 	}
 	session, err := s.Store.FindSessionByID(event.OakSessionID)
 	if err != nil {
@@ -50,6 +79,9 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 	shouldNotifySettled := event.Event == "agent_settled" && session.AgentStatus == AgentStatusWorking
 	now := time.Now().UTC()
 	err = s.Store.UpdateSession(session.ID, func(stored *Session) error {
+		if event.TmuxPaneID != "" {
+			stored.RightPaneID = event.TmuxPaneID
+		}
 		if event.SessionID != "" {
 			stored.AgentSessionIDs = dedupeStrings(append(stored.AgentSessionIDs, event.SessionID))
 		}

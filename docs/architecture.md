@@ -25,7 +25,7 @@ root_search_dirs = ["~/dev/general", "~/work"]
 roots = ["~/src/standalone-project"]
 ```
 
-Pi is the sole agent. Oak-tree writes its private extension to `<state>/pi/oak-tree-extension.ts` and launches Pi with `OAK_TREE_SESSION_ID` and `OAK_TREE_HOOK` set.
+Pi is the sole agent. Oak-tree writes its extension to `<state>/pi/oak-tree-extension.ts`, installs an auto-discovered copy in Pi's global extension directory, and launches managed Pi processes with `OAK_TREE_SESSION_ID` and `OAK_TREE_HOOK` set. The globally loaded extension stays inert outside managed sessions except for `/oak-tree register`, which can resolve a replacement Pi process from its current tmux pane.
 
 ## Lifecycle
 

@@ -20,7 +20,7 @@ func TestEnsurePiExtensionContainsLifecycleAndQuestionTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()"} {
+	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "registerCommand(\"oak-tree\"", "Usage: /oak-tree register", "tmux_pane", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("extension missing %q", want)
 		}
@@ -40,6 +40,21 @@ func TestPiExtensionPathDefaultsUnderStateDir(t *testing.T) {
 	}
 }
 
+func TestEnsurePiExtensionInstallsAutoDiscoveredCopy(t *testing.T) {
+	state, extensions := t.TempDir(), t.TempDir()
+	paths := Paths{StateDir: state, PiDir: filepath.Join(state, "pi"), PiExtensionsDir: extensions}
+	if _, err := EnsurePiExtension(paths); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(PiAutoExtensionPath(paths))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `registerCommand("oak-tree"`) {
+		t.Fatal("auto-discovered extension missing oak-tree command")
+	}
+}
+
 func TestPiCommandUsesPrivateExtensionAndOakSessionIdentity(t *testing.T) {
 	binDir := t.TempDir()
 	piBinary := filepath.Join(binDir, "pi")
@@ -48,16 +63,19 @@ func TestPiCommandUsesPrivateExtensionAndOakSessionIdentity(t *testing.T) {
 	}
 	t.Setenv("PATH", binDir)
 	state := t.TempDir()
-	paths := Paths{StateDir: state, PiDir: filepath.Join(state, "pi")}
+	paths := Paths{StateDir: state, PiDir: filepath.Join(state, "pi"), PiExtensionsDir: filepath.Join(t.TempDir(), "extensions")}
 	command, err := PiCommand(context.Background(), paths, "oak-session-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(command) != 6 || command[0] != "env" || command[1] != "OAK_TREE_SESSION_ID=oak-session-1" || !strings.HasPrefix(command[2], "OAK_TREE_HOOK=") || command[3] != "pi" || command[4] != "-e" || command[5] != PiExtensionPath(paths) {
+	if len(command) != 4 || command[0] != "env" || command[1] != "OAK_TREE_SESSION_ID=oak-session-1" || !strings.HasPrefix(command[2], "OAK_TREE_HOOK=") || command[3] != "pi" {
 		t.Fatalf("PiCommand() = %#v", command)
 	}
 	if _, err := os.Stat(PiExtensionPath(paths)); err != nil {
 		t.Fatalf("Pi extension not written: %v", err)
+	}
+	if _, err := os.Stat(PiAutoExtensionPath(paths)); err != nil {
+		t.Fatalf("auto-discovered Pi extension not written: %v", err)
 	}
 }
 
@@ -67,6 +85,31 @@ func TestPiCommandReportsMissingPi(t *testing.T) {
 	_, err := PiCommand(context.Background(), paths, "oak-session-1")
 	if err == nil || !strings.Contains(err.Error(), "Pi CLI is not installed") {
 		t.Fatalf("PiCommand() error = %v, want missing Pi guidance", err)
+	}
+}
+
+func TestHandleAgentEventResolvesOakSessionFromReplacementPane(t *testing.T) {
+	state := t.TempDir()
+	store := NewStore(state)
+	if err := store.SaveSession(Session{ID: "oak-1", TmuxSessionID: "$1", RightPaneID: "%2", CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &stubRunner{outputFunc: func(name string, args []string) ([]byte, error) {
+		if name == "tmux" && reflect.DeepEqual(args, PaneSessionIdCommandArgs("%9")) {
+			return []byte("$1\n"), nil
+		}
+		return nil, nil
+	}}
+	svc := NewService(Paths{StateDir: state}, store, runner)
+	if err := svc.HandleAgentEvent(context.Background(), AgentEvent{TmuxPaneID: "%9", Event: "session_start", SessionID: "pi-new"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.LoadSession("oak-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RightPaneID != "%9" || !reflect.DeepEqual(got.AgentSessionIDs, []string{"pi-new"}) {
+		t.Fatalf("session = %#v", got)
 	}
 }
 

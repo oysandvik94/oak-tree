@@ -22,7 +22,7 @@ func newHookCommand() *cobra.Command {
 
 func newAgentEventHookCommand() *cobra.Command {
 	var quiet bool
-	var oakSession, eventName, cwd, sessionID, sessionFile, todoJSON, legacyAgent string
+	var oakSession, tmuxPane, eventName, cwd, sessionID, sessionFile, todoJSON, legacyAgent string
 	var todoTotal, todoPending, todoInProgress, todoCompleted int
 	cmd := &cobra.Command{
 		Use:          "agent-event",
@@ -40,7 +40,7 @@ func newAgentEventHookCommand() *cobra.Command {
 			if oakSession == "" && eventName == "" {
 				event, err = oaktree.ParseAgentEvent(os.Stdin)
 			} else {
-				event.OakSessionID, event.Event, event.Cwd, event.SessionID, event.SessionFile = oakSession, eventName, cwd, sessionID, sessionFile
+				event.OakSessionID, event.TmuxPaneID, event.Event, event.Cwd, event.SessionID, event.SessionFile = oakSession, tmuxPane, eventName, cwd, sessionID, sessionFile
 				if eventName == "todo" {
 					event.Todo = &oaktree.TodoSummary{Total: todoTotal, Pending: todoPending, InProgress: todoInProgress, Completed: todoCompleted}
 					if todoJSON != "" {
@@ -62,6 +62,7 @@ func newAgentEventHookCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&quiet, "quiet", false, "Suppress hook errors")
 	cmd.Flags().StringVar(&oakSession, "oak-session", "", "Oak-tree session id")
+	cmd.Flags().StringVar(&tmuxPane, "tmux-pane", "", "Tmux pane used to resolve the oak-tree session")
 	cmd.Flags().StringVar(&eventName, "event", "", "Pi lifecycle event")
 	cmd.Flags().StringVar(&cwd, "cwd", "", "Pi working directory")
 	cmd.Flags().StringVar(&sessionID, "session-id", "", "Pi session id")

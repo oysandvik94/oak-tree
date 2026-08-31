@@ -44,6 +44,9 @@ func runDashboard(ctx context.Context, stdout *os.File, stdin *os.File) error {
 	if err != nil {
 		return err
 	}
+	if _, err := oaktree.EnsurePiExtension(svc.Paths); err != nil {
+		return fmt.Errorf("prepare Pi extension: %w", err)
+	}
 	cfg, err := oaktree.LoadConfig()
 	if err != nil {
 		return err
