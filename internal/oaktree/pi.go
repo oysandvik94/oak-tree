@@ -16,7 +16,7 @@ export default function (pi) {
   const tmuxPane = process.env.TMUX_PANE;
   let registered = Boolean(oak);
   async function hook(event, extra = {}) {
-    if (!registered || (!oak && !tmuxPane)) return false;
+    if (!extra.managed || !registered || (!oak && !tmuxPane)) return false;
     const command = process.env.OAK_TREE_HOOK || "oak-tree";
     const args = ["hook", "agent-event", "--event", event];
     if (oak) args.push("--oak-session", oak);
@@ -35,6 +35,7 @@ export default function (pi) {
     return false;
   }
   const identity = (ctx) => ({
+    managed: ctx.mode === "tui",
     tmux_pane: tmuxPane,
     cwd: ctx.cwd,
     session_id: ctx.sessionManager.getSessionId(),

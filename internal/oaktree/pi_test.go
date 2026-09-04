@@ -20,7 +20,7 @@ func TestEnsurePiExtensionContainsLifecycleAndQuestionTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "registerCommand(\"oak-tree\"", "Usage: /oak-tree register", "tmux_pane", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()"} {
+	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "registerCommand(\"oak-tree\"", "Usage: /oak-tree register", "managed: ctx.mode === \"tui\"", "!extra.managed", "tmux_pane", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("extension missing %q", want)
 		}
