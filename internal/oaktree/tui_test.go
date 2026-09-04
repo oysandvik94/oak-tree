@@ -136,10 +136,10 @@ func TestRenderDashboardUsesDenseSessionTable(t *testing.T) {
 		{ID: "question", Root: "/repo/identity", Branch: "feature/question", AgentStatus: AgentStatusQuestion, GitStatus: &GitStatus{Clean: true}},
 		{ID: "working", Root: "/repo/api", Branch: "feature/work", AgentStatus: AgentStatusWorking, GitStatus: &GitStatus{Clean: false}},
 		{ID: "review", Root: "/repo/docs", Branch: "feature/docs", Tag: SessionTagWaitingReview, AgentStatus: AgentStatusIdle},
-		{ID: "testing", Root: "/repo/web", Branch: "feature/web", Tag: SessionTagTesting, AgentStatus: AgentStatusIdle},
+		{ID: "blocked", Root: "/repo/web", Branch: "feature/web", Tag: SessionTagBlocked, AgentStatus: AgentStatusIdle},
 	}
 	rendered := model.View().Content
-	for _, want := range []string{"2 active", "needs-you", "working", "ready", "review", "testing", "REVIEW · 1 parked", "TESTING · 1 parked", "STATE", "SESSION", "BRANCH", "GIT", "PR", "COST", "identity", "feature/question", "▌", " QUESTION", "⠋ WORKING", " REVIEW", " TESTING", " clean"} {
+	for _, want := range []string{"2 active", "needs-you", "working", "ready", "review", "blocked", "REVIEW · 1 parked", "BLOCKED · 1 parked", "STATE", "SESSION", "BRANCH", "GIT", "PR", "COST", "identity", "feature/question", "▌", " QUESTION", "⠋ WORKING", " REVIEW", " BLOCKED", " clean"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("dashboard rendering missing %q: %q", want, rendered)
 		}
@@ -160,7 +160,7 @@ func TestVToggleRendersKanbanBoard(t *testing.T) {
 		{ID: "working", Root: "/repo/api", Branch: "feature/work", AgentStatus: AgentStatusWorking},
 		{ID: "ready", Root: "/repo/oak-tree", Branch: "main", AgentStatus: AgentStatusIdle},
 		{ID: "review", Root: "/repo/docs", Branch: "feature/docs", Tag: SessionTagWaitingReview, TagUpdatedAt: &parkedAt, Note: "Jarek review"},
-		{ID: "testing", Root: "/repo/web", Branch: "feature/web", Tag: SessionTagTesting},
+		{ID: "blocked", Root: "/repo/web", Branch: "feature/web", Tag: SessionTagBlocked},
 	}
 
 	updated, _ := model.Update(tea.KeyPressMsg(tea.Key{Code: 'v', Text: "v"}))
@@ -169,7 +169,7 @@ func TestVToggleRendersKanbanBoard(t *testing.T) {
 		t.Fatal("v did not enable kanban view")
 	}
 	rendered := kanban.View().Content
-	for _, want := range []string{"KANBAN", "QUESTION 1", "WORKING 1", "READY 1", "REVIEW 1", "TESTING 1", "identity", "feature/question", "✎", "age 2d", "v", "view"} {
+	for _, want := range []string{"KANBAN", "QUESTION 1", "WORKING 1", "READY 1", "REVIEW 1", "BLOCKED 1", "identity", "feature/question", "✎", "age 2d", "v", "view"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("kanban rendering missing %q: %q", want, rendered)
 		}
@@ -233,14 +233,14 @@ func TestKanbanNavigationMovesWithinAndAcrossColumns(t *testing.T) {
 		{ID: "question", AgentStatus: AgentStatusQuestion},
 		{ID: "working-1", AgentStatus: AgentStatusWorking},
 		{ID: "working-2", AgentStatus: AgentStatusWorking},
-		{ID: "testing-1", Tag: SessionTagTesting},
-		{ID: "testing-2", Tag: SessionTagTesting},
+		{ID: "blocked-1", Tag: SessionTagBlocked},
+		{ID: "blocked-2", Tag: SessionTagBlocked},
 	}
 	model.selected = 2
 
 	updated, _ := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
 	next := updated.(DashboardModel)
-	if got := next.currentSession().ID; got != "testing-2" {
+	if got := next.currentSession().ID; got != "blocked-2" {
 		t.Fatalf("right selected %q, want same row in next non-empty column", got)
 	}
 	updated, _ = next.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft}))
@@ -279,7 +279,7 @@ func TestSessionTableSemanticChipsUseExpectedIconsAndColors(t *testing.T) {
 		{Session{AgentStatus: AgentStatusAttention}, " READY", "82"},
 		{Session{AgentStatus: AgentStatusIdle}, " READY", "82"},
 		{Session{AgentStatus: AgentStatusWorking, Tag: SessionTagWaitingReview}, " REVIEW", "170"},
-		{Session{AgentStatus: AgentStatusWorking, Tag: SessionTagTesting}, " TESTING", "214"},
+		{Session{AgentStatus: AgentStatusWorking, Tag: SessionTagBlocked}, " BLOCKED", "203"},
 	}
 	for _, tc := range cases {
 		label, color, background := sessionTableStateChip(tc.session)
@@ -376,13 +376,13 @@ func TestWorkingStateChipAnimatesAtStableWidth(t *testing.T) {
 
 func TestDashboardOrdersActiveBeforeParkedSessions(t *testing.T) {
 	ordered := orderSessionsForDashboard([]Session{
-		{ID: "testing", AgentStatus: AgentStatusQuestion, Tag: SessionTagTesting},
+		{ID: "blocked", AgentStatus: AgentStatusQuestion, Tag: SessionTagBlocked},
 		{ID: "review", AgentStatus: AgentStatusQuestion, Tag: SessionTagWaitingReview},
 		{ID: "ready", AgentStatus: AgentStatusIdle},
 		{ID: "working", AgentStatus: AgentStatusWorking},
 	})
-	if got := []string{ordered[0].ID, ordered[1].ID, ordered[2].ID, ordered[3].ID}; got[0] != "working" || got[1] != "ready" || got[2] != "review" || got[3] != "testing" {
-		t.Fatalf("session order = %#v, want active sessions before review and testing", got)
+	if got := []string{ordered[0].ID, ordered[1].ID, ordered[2].ID, ordered[3].ID}; got[0] != "working" || got[1] != "ready" || got[2] != "review" || got[3] != "blocked" {
+		t.Fatalf("session order = %#v, want active sessions before review and blocked", got)
 	}
 }
 
@@ -444,11 +444,11 @@ func TestDenseTableCountsUsePrioritySemanticsAndShowsWideData(t *testing.T) {
 		{ID: "working", Root: "/repo/working", AgentStatus: AgentStatusWorking},
 		{ID: "working-review", Root: "/repo/working-review", Branch: "feature/review", AgentStatus: AgentStatusWorking, Tag: SessionTagWaitingReview},
 		{ID: "review", Root: "/repo/review", Tag: SessionTagWaitingReview},
-		{ID: "testing", Root: "/repo/testing", Tag: SessionTagTesting},
+		{ID: "blocked", Root: "/repo/blocked", Tag: SessionTagBlocked},
 		{ID: "idle", Root: "/repo/idle", AgentSessionIDs: []string{usageID}, Todo: &TodoSummary{Total: 3, Pending: 1, InProgress: 1, Completed: 1}, GitStatus: &GitStatus{Clean: false, Ahead: 1}, PR: &PRInfo{Found: true, Number: 42, State: "OPEN"}},
 	}
 	rendered := model.View().Content
-	for _, want := range []string{"2 active", "needs-you 0", "working 1", "ready 1", "review 4", "testing 1", "REVIEW · 4 parked", "TESTING · 1 parked", "STATE", "SESSION", "BRANCH", "GIT", "PR", "TODO", "COST", "changes ↑", "#42 open", "◐ 1/3", "$1.25"} {
+	for _, want := range []string{"2 active", "needs-you 0", "working 1", "ready 1", "review 4", "blocked 1", "REVIEW · 4 parked", "BLOCKED · 1 parked", "STATE", "SESSION", "BRANCH", "GIT", "PR", "TODO", "COST", "changes ↑", "#42 open", "◐ 1/3", "$1.25"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("dense table missing %q: %q", want, rendered)
 		}
@@ -599,7 +599,7 @@ func TestSessionParkedAge(t *testing.T) {
 	if got := sessionParkedAge(Session{Tag: SessionTagWaitingReview, TagUpdatedAt: &taggedAt}, now); got != "2d" {
 		t.Fatalf("sessionParkedAge() = %q, want %q", got, "2d")
 	}
-	if got := sessionParkedAge(Session{Tag: SessionTagTesting, CreatedAt: now.Add(-3 * time.Hour), UpdatedAt: now.Add(-time.Minute)}, now); got != "3h" {
+	if got := sessionParkedAge(Session{Tag: SessionTagBlocked, CreatedAt: now.Add(-3 * time.Hour), UpdatedAt: now.Add(-time.Minute)}, now); got != "3h" {
 		t.Fatalf("legacy sessionParkedAge() = %q, want %q", got, "3h")
 	}
 	if got := sessionParkedAge(Session{CreatedAt: now.Add(-3 * time.Hour)}, now); got != "" {
@@ -766,7 +766,7 @@ func TestAgentStatusRefreshPreservesGitStatus(t *testing.T) {
 	}
 }
 
-func TestSessionTagPickerPersistsTestingAndMovesSessionDown(t *testing.T) {
+func TestSessionTagPickerPersistsBlockedAndMovesSessionDown(t *testing.T) {
 	stateDir := t.TempDir()
 	store := NewStore(stateDir)
 	sessions := []Session{
@@ -806,17 +806,17 @@ func TestSessionTagPickerPersistsTestingAndMovesSessionDown(t *testing.T) {
 		t.Fatalf("mode = %v, want dashboard", next.mode)
 	}
 	if next.sessions[0].ID != "active" || next.sessions[1].ID != "selected" {
-		t.Fatalf("session order = %#v, want active before testing", []string{next.sessions[0].ID, next.sessions[1].ID})
+		t.Fatalf("session order = %#v, want active before blocked", []string{next.sessions[0].ID, next.sessions[1].ID})
 	}
-	if next.selected != 1 || next.sessions[next.selected].Tag != SessionTagTesting {
-		t.Fatalf("selected/tag = %d/%q, want selected testing", next.selected, next.sessions[next.selected].Tag)
+	if next.selected != 1 || next.sessions[next.selected].Tag != SessionTagBlocked {
+		t.Fatalf("selected/tag = %d/%q, want selected blocked", next.selected, next.sessions[next.selected].Tag)
 	}
 	loaded, err := store.LoadSession("selected")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Tag != SessionTagTesting {
-		t.Fatalf("persisted tag = %q, want %q", loaded.Tag, SessionTagTesting)
+	if loaded.Tag != SessionTagBlocked {
+		t.Fatalf("persisted tag = %q, want %q", loaded.Tag, SessionTagBlocked)
 	}
 	if loaded.TagUpdatedAt == nil {
 		t.Fatal("persisted tag timestamp is nil")

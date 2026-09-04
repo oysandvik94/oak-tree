@@ -177,6 +177,8 @@ func EnsurePiExtension(paths Paths) (string, error) {
 	return path, nil
 }
 
+const piManagedCheckoutPrompt = "This session is managed by oak-tree. Oak-tree has already selected the working directory and Git checkout. Work directly in the current checkout. Do not create or switch branches or create another worktree unless the user explicitly asks."
+
 func PiCommand(ctx context.Context, paths Paths, sessionID string) ([]string, error) {
 	if _, err := osexec.LookPath("pi"); err != nil {
 		return nil, fmt.Errorf("Pi CLI is not installed or not on PATH: %w", err)
@@ -188,5 +190,5 @@ func PiCommand(ctx context.Context, paths Paths, sessionID string) ([]string, er
 	if err != nil {
 		return nil, fmt.Errorf("prepare Pi hook executable: %w", err)
 	}
-	return []string{"env", "OAK_TREE_SESSION_ID=" + sessionID, "OAK_TREE_HOOK=" + hook, "pi"}, nil
+	return []string{"env", "OAK_TREE_SESSION_ID=" + sessionID, "OAK_TREE_HOOK=" + hook, "pi", "--append-system-prompt", piManagedCheckoutPrompt}, nil
 }

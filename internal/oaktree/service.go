@@ -224,8 +224,8 @@ func normalizeSessionTag(tag SessionTag) (SessionTag, error) {
 		return SessionTagNone, nil
 	case SessionTagWaitingReview:
 		return SessionTagWaitingReview, nil
-	case SessionTagTesting:
-		return SessionTagTesting, nil
+	case SessionTagBlocked:
+		return SessionTagBlocked, nil
 	default:
 		return "", fmt.Errorf("unknown session tag %q", tag)
 	}

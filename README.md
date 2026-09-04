@@ -128,7 +128,7 @@ p          refresh PR for selected session
 q          quit
 ```
 
-When closing, press `y` to confirm. If the dashboard popup is running from the session being closed, oak-tree switches the tmux client to a nearby remaining session before killing it. Kanban view groups sessions into `QUESTION`, `WORKING`, `READY`, `REVIEW`, and `TESTING` columns while keeping the same selection and actions. The last selected view is restored the next time the dashboard opens.
+When closing, press `y` to confirm. If the dashboard popup is running from the session being closed, oak-tree switches the tmux client to a nearby remaining session before killing it. Kanban view groups sessions into `QUESTION`, `WORKING`, `READY`, `REVIEW`, and `BLOCKED` columns while keeping the same selection and actions. The last selected view is restored the next time the dashboard opens.
 
 ## Session Status
 
@@ -137,10 +137,10 @@ Press `t` on a selected session to choose a manual status:
 ```text
 ACTIVE
 WAITING REVIEW
-TESTING
+BLOCKED
 ```
 
-Sessions marked `WAITING REVIEW` or `TESTING` move into separate parked sections below active sessions and are excluded from the active count. The manual tag overrides the current agent state until changed back to `ACTIVE`. Press `e` to open the selected session's note popup, where an empty note clears it; noted kanban cards show a highlighted `✎` icon.
+Sessions marked `WAITING REVIEW` or `BLOCKED` move into separate parked sections below active sessions and are excluded from the active count. The manual tag overrides the current agent state until changed back to `ACTIVE`. Press `e` to open the selected session's note popup, where an empty note clears it; noted kanban cards show a highlighted `✎` icon.
 
 ## Agent Status
 
@@ -205,7 +205,7 @@ logs/       command debug logs
 ```
 
 Session JSON may include cached PR metadata under `pr`. That cache is updated by dashboard background refresh for missing or stale branch-backed sessions, and by explicit PR refresh.
-Session JSON may include a manual status under `tag`, such as `waiting_review` or `testing`, and a Pi todo summary under `todo`.
+Session JSON may include a manual status under `tag`, such as `waiting_review` or the legacy-compatible `testing` value used for `BLOCKED`, and a Pi todo summary under `todo`.
 Agent usage data is cached separately under `cache/usage.json`.
 
 User configuration is stored separately under:

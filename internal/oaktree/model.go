@@ -17,7 +17,7 @@ type SessionTag string
 const (
 	SessionTagNone          SessionTag = ""
 	SessionTagWaitingReview SessionTag = "waiting_review"
-	SessionTagTesting       SessionTag = "testing"
+	SessionTagBlocked       SessionTag = "testing" // Keep the persisted value compatible with existing sessions.
 )
 
 type TodoTask struct {

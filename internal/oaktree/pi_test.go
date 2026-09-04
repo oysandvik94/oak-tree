@@ -68,7 +68,7 @@ func TestPiCommandUsesPrivateExtensionAndOakSessionIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(command) != 4 || command[0] != "env" || command[1] != "OAK_TREE_SESSION_ID=oak-session-1" || !strings.HasPrefix(command[2], "OAK_TREE_HOOK=") || command[3] != "pi" {
+	if len(command) != 6 || command[0] != "env" || command[1] != "OAK_TREE_SESSION_ID=oak-session-1" || !strings.HasPrefix(command[2], "OAK_TREE_HOOK=") || command[3] != "pi" || command[4] != "--append-system-prompt" || command[5] != piManagedCheckoutPrompt {
 		t.Fatalf("PiCommand() = %#v", command)
 	}
 	if _, err := os.Stat(PiExtensionPath(paths)); err != nil {

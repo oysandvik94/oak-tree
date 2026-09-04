@@ -837,7 +837,7 @@ func TestSetSessionTagTracksWhenParkedStateChanged(t *testing.T) {
 	if unchanged.TagUpdatedAt == nil || !unchanged.TagUpdatedAt.Equal(old) {
 		t.Fatalf("unchanged tag timestamp = %v, want %s", unchanged.TagUpdatedAt, old)
 	}
-	changed, err := svc.SetSessionTag(context.Background(), session.ID, SessionTagTesting)
+	changed, err := svc.SetSessionTag(context.Background(), session.ID, SessionTagBlocked)
 	if err != nil {
 		t.Fatal(err)
 	}

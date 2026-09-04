@@ -16,7 +16,7 @@
 - Pi sessions use a state-owned, globally auto-discovered extension and `oak-tree hook agent-event`. Replacement Pi processes in the same managed tmux session can attach with `/oak-tree register`. The extension also forwards `@juicesharp/rpiv-todo` task snapshots from persisted `todo` tool results.
 - Session JSON stores generic `agent_session_ids` and may include a one-line `note`; kanban cards show a highlighted note icon and `e` opens the note popup.
 - Dashboard root selection uses `~/.config/oak-tree/config.toml`: `root_search_dirs` contributes immediate child directories, while `roots` contributes exact directories.
-- Dashboard agent states are `QUESTION`, `WORKING`, and `READY`. Manually tagged `REVIEW` and `TESTING` sessions are excluded from the active count and grouped in separate parked sections below active sessions.
+- Dashboard agent states are `QUESTION`, `WORKING`, and `READY`. Manually tagged `REVIEW` and `BLOCKED` sessions are excluded from the active count and grouped in separate parked sections below active sessions.
 - Pull request metadata is cached on session JSON. Dashboard startup may queue background refreshes for missing or stale branch-backed session PR caches; explicit `p` refresh still force-refreshes the selected session. An actual PR on the selected session gets a two-line inspector above the key footer with lifecycle, CI, approval, unresolved comments, and contextual open/refresh commands.
 - Pi todo summaries appear in the wide session table; `space` expands or collapses the selected session's persisted task subjects inline.
 
@@ -54,7 +54,7 @@ worktrees/  oak-tree-created git worktrees
 logs/       JSONL command diagnostics
 ```
 
-Session records may include an optional `pr` block with cached GitHub PR state, an optional manual `tag` such as `waiting_review` or `testing`, and an optional Pi `todo` summary.
+Session records may include an optional `pr` block with cached GitHub PR state, an optional manual `tag` such as `waiting_review` or the legacy-compatible `testing` value used for blocked sessions, and an optional Pi `todo` summary.
 
 Do not store transient runtime state in the repository.
 

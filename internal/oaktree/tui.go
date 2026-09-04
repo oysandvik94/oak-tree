@@ -117,7 +117,7 @@ type tagOption struct {
 var sessionTagOptions = []tagOption{
 	{Tag: SessionTagNone, Label: "active", Color: "81"},
 	{Tag: SessionTagWaitingReview, Label: "waiting review", Color: "244"},
-	{Tag: SessionTagTesting, Label: "testing", Color: "214"},
+	{Tag: SessionTagBlocked, Label: "blocked", Color: "203"},
 }
 
 type createStage int
@@ -1738,7 +1738,7 @@ func (m DashboardModel) renderSessionsPanel(width, height int) string {
 	if len(m.sessions) == 0 {
 		return panelStyle.Render(title + "\n\n" + m.renderEmptySessions(innerWidth))
 	}
-	summary := joinStatusItems(innerWidth, []string{renderMetric("needs-you", fmt.Sprintf("%d", counts[0]), "81"), renderMetric("working", fmt.Sprintf("%d", counts[1]), "214"), renderMetric("ready", fmt.Sprintf("%d", counts[2]), "82"), renderMetric("review", fmt.Sprintf("%d", counts[3]), "170"), renderMetric("testing", fmt.Sprintf("%d", counts[4]), "214")})
+	summary := joinStatusItems(innerWidth, []string{renderMetric("needs-you", fmt.Sprintf("%d", counts[0]), "81"), renderMetric("working", fmt.Sprintf("%d", counts[1]), "214"), renderMetric("ready", fmt.Sprintf("%d", counts[2]), "82"), renderMetric("review", fmt.Sprintf("%d", counts[3]), "170"), renderMetric("blocked", fmt.Sprintf("%d", counts[4]), "203")})
 	head := m.renderSessionTableHeader(innerWidth)
 	maxRows := max(1, height-3)
 	if counts[3] > 0 {
@@ -1765,8 +1765,8 @@ func (m DashboardModel) renderSessionsPanel(width, height int) string {
 		if m.sessions[i].Tag == SessionTagWaitingReview && (i == start || m.sessions[i-1].Tag != SessionTagWaitingReview) {
 			rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Bold(true).Render(fmt.Sprintf("REVIEW · %d parked", counts[3])))
 		}
-		if m.sessions[i].Tag == SessionTagTesting && (i == start || m.sessions[i-1].Tag != SessionTagTesting) {
-			rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render(fmt.Sprintf("TESTING · %d parked", counts[4])))
+		if m.sessions[i].Tag == SessionTagBlocked && (i == start || m.sessions[i-1].Tag != SessionTagBlocked) {
+			rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true).Render(fmt.Sprintf("BLOCKED · %d parked", counts[4])))
 		}
 		rows = append(rows, m.renderSessionTableRow(m.sessions[i], i == m.selected, innerWidth))
 		if i == m.selected && todoRows > 0 {
@@ -1792,9 +1792,9 @@ func (m DashboardModel) renderKanbanPanel(width, height int) string {
 	if len(m.sessions) == 0 {
 		return panelStyle.Render(title + "\n\n" + m.renderEmptySessions(innerWidth))
 	}
-	summary := joinStatusItems(innerWidth, []string{renderMetric("needs-you", fmt.Sprintf("%d", counts[0]), "81"), renderMetric("working", fmt.Sprintf("%d", counts[1]), "214"), renderMetric("ready", fmt.Sprintf("%d", counts[2]), "82"), renderMetric("review", fmt.Sprintf("%d", counts[3]), "170"), renderMetric("testing", fmt.Sprintf("%d", counts[4]), "214")})
-	labels := [5]string{"QUESTION", "WORKING", "READY", "REVIEW", "TESTING"}
-	colors := [5]string{"81", "214", "82", "170", "214"}
+	summary := joinStatusItems(innerWidth, []string{renderMetric("needs-you", fmt.Sprintf("%d", counts[0]), "81"), renderMetric("working", fmt.Sprintf("%d", counts[1]), "214"), renderMetric("ready", fmt.Sprintf("%d", counts[2]), "82"), renderMetric("review", fmt.Sprintf("%d", counts[3]), "170"), renderMetric("blocked", fmt.Sprintf("%d", counts[4]), "203")})
+	labels := [5]string{"QUESTION", "WORKING", "READY", "REVIEW", "BLOCKED"}
+	colors := [5]string{"81", "214", "82", "170", "203"}
 	columnWidth := max(6, (innerWidth-4)/5)
 	columnHeight := max(1, height-4)
 	columns := make([]string, 0, 9)
@@ -1921,7 +1921,7 @@ func sessionDashboardBucket(session Session) int {
 	if session.Tag == SessionTagWaitingReview {
 		return 3
 	}
-	if session.Tag == SessionTagTesting {
+	if session.Tag == SessionTagBlocked {
 		return 4
 	}
 	switch session.AgentStatus {
@@ -2050,7 +2050,7 @@ func sessionTableStateChipAtFrame(session Session, frame int) (string, string, s
 	case 3:
 		return " REVIEW", "170", "#4b2847"
 	default:
-		return " TESTING", "214", "#4c3d20"
+		return " BLOCKED", "203", "#4a2525"
 	}
 }
 
