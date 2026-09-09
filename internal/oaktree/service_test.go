@@ -1160,6 +1160,26 @@ func TestCloseCurrentSessionSwitchesToFallbackBeforeKilling(t *testing.T) {
 	}
 }
 
+func TestRemoveWorktreeCleansIgnoredFilesBeforeRemoval(t *testing.T) {
+	var calls []string
+	runner := &stubRunner{runFunc: func(name string, args []string) error {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		return nil
+	}}
+
+	if err := RemoveWorktree(context.Background(), runner, "/repo", "/worktree"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"git -C /worktree clean -fdX",
+		"git -C /repo worktree remove /worktree",
+		"git -C /repo worktree prune",
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("git calls = %#v, want %#v", calls, want)
+	}
+}
+
 func TestCloseSessionRemovesStateWhenTmuxSessionIsMissing(t *testing.T) {
 	stateDir := t.TempDir()
 	paths := Paths{StateDir: stateDir}

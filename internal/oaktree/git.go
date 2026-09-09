@@ -315,6 +315,9 @@ func parseGitBranchStatus(line string, status *GitStatus) {
 }
 
 func RemoveWorktree(ctx context.Context, runner Runner, root, worktree string) error {
+	if err := runner.Run(ctx, "git", "-C", worktree, "clean", "-fdX"); err != nil {
+		return err
+	}
 	if err := runner.Run(ctx, "git", "-C", root, "worktree", "remove", worktree); err != nil {
 		return err
 	}
