@@ -291,7 +291,15 @@ func (s *Service) CloseSessionWithFallback(ctx context.Context, id, fallbackTmux
 	if err != nil {
 		return err
 	}
-	if session.OwnedWorktree {
+	removeWorktree := session.OwnedWorktree
+	if removeWorktree {
+		if _, err := os.Stat(session.Workdir); os.IsNotExist(err) {
+			removeWorktree = false
+		} else if err != nil {
+			return err
+		}
+	}
+	if removeWorktree {
 		dirty, err := IsDirtyWorktree(ctx, s.Exec, session.Workdir)
 		if err != nil {
 			return err
@@ -317,7 +325,7 @@ func (s *Service) CloseSessionWithFallback(ctx context.Context, id, fallbackTmux
 			return err
 		}
 	}
-	if session.OwnedWorktree {
+	if removeWorktree {
 		if err := RemoveWorktree(ctx, s.Exec, session.Root, session.Workdir); err != nil {
 			return err
 		}

@@ -1221,6 +1221,34 @@ func TestCloseSessionRemovesStateWhenTmuxSessionIsMissing(t *testing.T) {
 	}
 }
 
+func TestCloseSessionRemovesStateWhenOwnedWorktreeIsMissing(t *testing.T) {
+	stateDir := t.TempDir()
+	store := NewStore(stateDir)
+	session := Session{
+		ID:              "missing-worktree",
+		Root:            "/repo",
+		Workdir:         filepath.Join(stateDir, "missing"),
+		OwnedWorktree:   true,
+		TmuxSessionName: "oak-missing-worktree",
+	}
+	if err := store.SaveSession(session); err != nil {
+		t.Fatal(err)
+	}
+	runner := &stubRunner{runFunc: func(name string, args []string) error {
+		if name == "git" {
+			t.Fatalf("unexpected git call: %s %#v", name, args)
+		}
+		return errors.New("can't find session")
+	}}
+
+	if err := NewService(Paths{StateDir: stateDir}, store, runner).CloseSession(context.Background(), session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(SessionFilePath(stateDir, session.ID)); !os.IsNotExist(err) {
+		t.Fatalf("session file still exists or unexpected stat error: %v", err)
+	}
+}
+
 func assertErrorContains(t *testing.T, err error, want string) {
 	t.Helper()
 	if !strings.Contains(err.Error(), want) {
