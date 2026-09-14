@@ -139,10 +139,6 @@ func CreateWorktree(ctx context.Context, runner Runner, paths Paths, root, branc
 		_ = RemoveWorktree(ctx, runner, root, worktreePath)
 		return "", fmt.Errorf("configure upstream for branch %s: %w", branch, err)
 	}
-	if err := seedGraphify(root, worktreePath); err != nil {
-		_ = RemoveWorktree(ctx, runner, root, worktreePath)
-		return "", fmt.Errorf("seed Graphify graph: %w", err)
-	}
 	return worktreePath, nil
 }
 
@@ -201,25 +197,7 @@ func OpenExistingWorktree(ctx context.Context, runner Runner, paths Paths, root,
 	if err := runner.Run(ctx, "git", args...); err != nil {
 		return "", false, err
 	}
-	if err := seedGraphify(root, worktreePath); err != nil {
-		_ = RemoveWorktree(ctx, runner, root, worktreePath)
-		return "", false, fmt.Errorf("seed Graphify graph: %w", err)
-	}
 	return worktreePath, true, nil
-}
-
-func seedGraphify(root, worktreePath string) error {
-	source := filepath.Join(root, "graphify-out")
-	if _, err := os.Stat(source); os.IsNotExist(err) {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	destination := filepath.Join(worktreePath, "graphify-out")
-	if err := os.CopyFS(destination, os.DirFS(source)); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(destination, "needs_update"), []byte("1\n"), 0o600)
 }
 
 func WorktreeForBranch(ctx context.Context, runner Runner, root, branch string) (string, bool, error) {
