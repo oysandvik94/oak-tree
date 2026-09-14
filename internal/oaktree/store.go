@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -82,7 +83,7 @@ func atomicWrite(path string, data []byte, mode fs.FileMode) error {
 func (s *Store) SaveSession(session Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.saveSessionLocked(session)
+	return s.withSessionLock(session.ID, func() error { return s.saveSessionLocked(session) })
 }
 
 func (s *Store) saveSessionLocked(session Session) error {
@@ -138,18 +139,46 @@ func (s *Store) ListSessions() ([]Session, error) {
 	return sessions, nil
 }
 
+func (s *Store) DeleteSession(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.withSessionLock(id, func() error { return os.Remove(SessionFilePath(s.StateDir, id)) })
+}
+
 func (s *Store) UpdateSession(id string, fn func(*Session) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	session, err := s.LoadSession(id)
+	return s.withSessionLock(id, func() error {
+		session, err := s.LoadSession(id)
+		if err != nil {
+			return err
+		}
+		if err := fn(&session); err != nil {
+			return err
+		}
+		session.UpdatedAt = time.Now().UTC()
+		return s.saveSessionLocked(session)
+	})
+}
+
+func (s *Store) withSessionLock(id string, fn func() error) error {
+	if err := s.ensureDirs(); err != nil {
+		return err
+	}
+	path := filepath.Join(s.StateDir, "sessions", "."+SafeComponent(id)+".lock")
+	lock, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}
-	if err := fn(&session); err != nil {
+	defer lock.Close()
+	if err := lock.Chmod(0o600); err != nil {
 		return err
 	}
-	session.UpdatedAt = time.Now().UTC()
-	return s.saveSessionLocked(session)
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	return fn()
 }
 
 func (s *Store) FindSessionByWorkdir(workdir string) (*Session, error) {

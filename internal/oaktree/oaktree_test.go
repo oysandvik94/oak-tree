@@ -107,6 +107,105 @@ func TestStoreSaveLoadUpdateAndList(t *testing.T) {
 	}
 }
 
+func TestStoreSerializesUpdatesAcrossInstances(t *testing.T) {
+	stateDir := t.TempDir()
+	first, second := NewStore(stateDir), NewStore(stateDir)
+	if err := first.SaveSession(Session{ID: "shared", CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+
+	firstEntered := make(chan struct{})
+	secondStarted := make(chan struct{})
+	secondEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	errs := make(chan error, 2)
+	go func() {
+		errs <- first.UpdateSession("shared", func(session *Session) error {
+			close(firstEntered)
+			<-releaseFirst
+			session.Note = "first"
+			return nil
+		})
+	}()
+	<-firstEntered
+	go func() {
+		close(secondStarted)
+		errs <- second.UpdateSession("shared", func(session *Session) error {
+			close(secondEntered)
+			session.Branch = "second"
+			return nil
+		})
+	}()
+
+	<-secondStarted
+	secondWasBlocked := false
+	select {
+	case <-secondEntered:
+	case <-time.After(50 * time.Millisecond):
+		secondWasBlocked = true
+	}
+	close(releaseFirst)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !secondWasBlocked {
+		t.Fatal("second Store entered UpdateSession before the first released its file lock")
+	}
+	loaded, err := first.LoadSession("shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Note != "first" || loaded.Branch != "second" {
+		t.Fatalf("concurrent updates lost data: %#v", loaded)
+	}
+}
+
+func TestStoreDeleteWaitsForConcurrentUpdate(t *testing.T) {
+	stateDir := t.TempDir()
+	updater, deleter := NewStore(stateDir), NewStore(stateDir)
+	if err := updater.SaveSession(Session{ID: "deleting", CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+
+	updateEntered := make(chan struct{})
+	releaseUpdate := make(chan struct{})
+	updateDone := make(chan error, 1)
+	deleteDone := make(chan error, 1)
+	go func() {
+		updateDone <- updater.UpdateSession("deleting", func(session *Session) error {
+			close(updateEntered)
+			<-releaseUpdate
+			session.Note = "updated"
+			return nil
+		})
+	}()
+	<-updateEntered
+	go func() { deleteDone <- deleter.DeleteSession("deleting") }()
+
+	deleteWasBlocked := false
+	select {
+	case err := <-deleteDone:
+		deleteDone <- err
+	case <-time.After(50 * time.Millisecond):
+		deleteWasBlocked = true
+	}
+	close(releaseUpdate)
+	if err := <-updateDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-deleteDone; err != nil {
+		t.Fatal(err)
+	}
+	if !deleteWasBlocked {
+		t.Fatal("DeleteSession did not wait for the active update")
+	}
+	if _, err := updater.LoadSession("deleting"); !os.IsNotExist(err) {
+		t.Fatalf("deleted session was resurrected: %v", err)
+	}
+}
+
 func TestLoadSessionRestrictsExistingFile(t *testing.T) {
 	stateDir := t.TempDir()
 	path := SessionFilePath(stateDir, "legacy")

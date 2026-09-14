@@ -156,6 +156,12 @@ Session rows show coding-agent turn status next to `tmux`:
 
 If you close Pi and start another Pi process inside the same oak-tree tmux session, run `/oak-tree register` in the replacement process. Oak-tree then tracks its lifecycle, usage, and pane in the existing dashboard row.
 
+## Campfire
+
+Wide kanban layouts include a live `Campfire` rail beside the board. Managed Pi sessions receive a `campfire_update` tool with instructions to post short, factual updates after meaningful plans, discoveries, setbacks, recoveries, test results, milestones, and handoffs—not routine tool calls. The dashboard combines updates from all visible sessions newest-first, with message kinds rendered as colored labels.
+
+Campfire messages are limited to 140 characters. Oak-tree rejects invalid kinds and terminal control characters, ignores duplicate or overly frequent routine updates, and keeps the latest 25 messages per session.
+
 ## Todo Status
 
 For Pi sessions using `@juicesharp/rpiv-todo`, the wide dashboard table shows completed and total tasks in a `TODO` column. `◐ 1/3` means a task is in progress, `○ 1/3` means work is pending with nothing active, and `✓ 3/3` means all tasks are complete. Press `space` on a session with todo details to expand or collapse its task subjects inline. Oak-tree restores the latest todo snapshot when Pi starts and updates it after each successful `todo` tool call. Compact layouts hide the summary column.
@@ -205,7 +211,7 @@ logs/       command debug logs
 ```
 
 Session JSON may include cached PR metadata under `pr`. That cache is updated by dashboard background refresh for missing or stale branch-backed sessions, and by explicit PR refresh.
-Session JSON may include a manual status under `tag`, such as `waiting_review` or the legacy-compatible `testing` value used for `BLOCKED`, and a Pi todo summary under `todo`.
+Session JSON may include a manual status under `tag`, such as `waiting_review` or the legacy-compatible `testing` value used for `BLOCKED`, a Pi todo summary under `todo`, and bounded Campfire activity under `campfire`.
 Agent usage data is cached separately under `cache/usage.json`.
 
 User configuration is stored separately under:

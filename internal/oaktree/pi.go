@@ -9,7 +9,8 @@ import (
 
 // PiExtensionSource is kept in the binary so Pi sessions never depend on a
 // checked-out oak-tree source tree.
-const PiExtensionSource = `import { Type } from "typebox";
+const PiExtensionSource = `import { StringEnum } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 export default function (pi) {
   const oak = process.env.OAK_TREE_SESSION_ID;
@@ -22,7 +23,7 @@ export default function (pi) {
     if (oak) args.push("--oak-session", oak);
     for (const [key, value] of Object.entries(extra)) {
       if (value === undefined || value === null || value === "") continue;
-      if (!["tmux_pane", "cwd", "session_id", "session_file", "todo_total", "todo_pending", "todo_in_progress", "todo_completed", "todo_json"].includes(key)) continue;
+      if (!["tmux_pane", "cwd", "session_id", "session_file", "todo_total", "todo_pending", "todo_in_progress", "todo_completed", "todo_json", "activity_kind", "activity_message"].includes(key)) continue;
       args.push("--" + key.replaceAll("_", "-"), String(value));
     }
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -74,6 +75,7 @@ export default function (pi) {
       if (message?.role === "toolResult" && message.toolName === "todo" && Array.isArray(message.details?.tasks)) latest = message.details;
     }
     await reportTodos(ctx, latest);
+    registerCampfireTool();
     if (!pi.getAllTools().some((tool) => tool.name === "ask_user_question")) registerQuestionTool();
     return true;
   }
@@ -121,6 +123,32 @@ export default function (pi) {
       await hook("question_answered", identity(ctx));
     }
   });
+
+  function registerCampfireTool() {
+    if (pi.getAllTools().some((tool) => tool.name === "campfire_update")) return;
+    pi.registerTool({
+      name: "campfire_update",
+      label: "Campfire",
+      description: "Post one short, factual progress update to the oak-tree Campfire feed.",
+      promptSnippet: "Post meaningful progress updates to the oak-tree Campfire feed",
+      promptGuidelines: [
+        "Use campfire_update after a meaningful plan, discovery, setback, recovery, test result, milestone, or handoff.",
+        "Do not use campfire_update for routine reads, searches, commands, tiny tasks, or repeated information.",
+        "Keep campfire_update messages factual, conversational, and under 140 characters; include the next action when useful, and never invent progress.",
+        "Never include secrets, private data, or raw stack traces in campfire_update messages.",
+      ],
+      executionMode: "sequential",
+      parameters: Type.Object({
+        kind: StringEnum(["plan", "discovery", "snag", "recovery", "tests", "milestone", "handoff", "aside"]),
+        message: Type.String({ maxLength: 140 }),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        const sent = await hook("campfire", { ...identity(ctx), activity_kind: params.kind, activity_message: params.message });
+        if (!sent) throw new Error("Could not post Campfire update");
+        return { content: [{ type: "text", text: "Campfire update posted." }], details: params };
+      },
+    });
+  }
 
   function registerQuestionTool() {
     pi.registerTool({

@@ -190,6 +190,63 @@ func TestVToggleRendersKanbanBoard(t *testing.T) {
 	}
 }
 
+func TestKanbanRendersGlobalCampfireRailNewestFirst(t *testing.T) {
+	model := NewDashboardModel(&Service{}, Config{})
+	model.width, model.height = 180, 26
+	model.kanbanView = true
+	now := time.Now().UTC()
+	model.sessions = []Session{
+		{ID: "api", Root: "/repo/accounting-api", AgentStatus: AgentStatusWorking, Campfire: []CampfireMessage{{At: now.Add(-time.Minute), Kind: "snag", Message: "Auth fixture is lying; trying a real token."}}},
+		{ID: "client", Root: "/repo/signing-client", AgentStatus: AgentStatusWorking, Campfire: []CampfireMessage{{At: now, Kind: "tests", Message: "Finally got the suite running — 47 tests pass."}}},
+	}
+
+	rendered := model.View().Content
+	for _, want := range []string{"Campfire", "LIVE", "TESTS", "signing-client", "47 tests", "SNAG", "accounting-api", "Auth fixture"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("Campfire rail missing %q: %q", want, rendered)
+		}
+	}
+	if strings.Index(rendered, "Finally got") > strings.Index(rendered, "Auth fixture") {
+		t.Fatalf("Campfire messages not newest-first: %q", rendered)
+	}
+	if got := lipgloss.Height(rendered); got != model.height {
+		t.Fatalf("kanban with Campfire height = %d, want %d", got, model.height)
+	}
+}
+
+func TestCampfireRailMarksTruncatedMessagesWithoutOverflow(t *testing.T) {
+	model := NewDashboardModel(&Service{}, Config{})
+	model.sessions = []Session{{Root: "/repo/火🔥verbose", Campfire: []CampfireMessage{{At: time.Now(), Kind: "aside", Message: strings.Repeat("長い🔥message ", 11)}}}}
+	rendered := model.renderCampfireRail(36, 12)
+	if !strings.Contains(rendered, "…") {
+		t.Fatalf("truncated Campfire message has no ellipsis: %q", rendered)
+	}
+	for _, line := range strings.Split(rendered, "\n") {
+		if width := lipgloss.Width(line); width > 38 {
+			t.Fatalf("Campfire line width = %d, want <= 38: %q", width, line)
+		}
+	}
+}
+
+func TestCampfireRailStartsAt120TerminalColumns(t *testing.T) {
+	model := NewDashboardModel(&Service{}, Config{})
+	model.height = 20
+	model.kanbanView = true
+	model.sessions = []Session{{Root: "/repo/api", Campfire: []CampfireMessage{{At: time.Now(), Kind: "plan", Message: "Starting."}}}}
+	model.width = 119
+	if rendered := model.View().Content; strings.Contains(rendered, "Campfire") {
+		t.Fatalf("Campfire rendered below width threshold: %q", rendered)
+	}
+	model.width = 120
+	rendered := model.View().Content
+	if !strings.Contains(rendered, "Campfire") {
+		t.Fatalf("Campfire missing at width threshold: %q", rendered)
+	}
+	if width := lipgloss.Width(rendered); width != model.width {
+		t.Fatalf("dashboard width with Campfire = %d, want %d", width, model.width)
+	}
+}
+
 func TestKanbanShowsTestingSessionInFocusStrip(t *testing.T) {
 	model := NewDashboardModel(&Service{}, Config{})
 	model.width, model.height = 180, 26

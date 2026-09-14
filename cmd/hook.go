@@ -22,7 +22,7 @@ func newHookCommand() *cobra.Command {
 
 func newAgentEventHookCommand() *cobra.Command {
 	var quiet bool
-	var oakSession, tmuxPane, eventName, cwd, sessionID, sessionFile, todoJSON, legacyAgent string
+	var oakSession, tmuxPane, eventName, cwd, sessionID, sessionFile, todoJSON, activityKind, activityMessage, legacyAgent string
 	var todoTotal, todoPending, todoInProgress, todoCompleted int
 	cmd := &cobra.Command{
 		Use:          "agent-event",
@@ -41,6 +41,7 @@ func newAgentEventHookCommand() *cobra.Command {
 				event, err = oaktree.ParseAgentEvent(os.Stdin)
 			} else {
 				event.OakSessionID, event.TmuxPaneID, event.Event, event.Cwd, event.SessionID, event.SessionFile = oakSession, tmuxPane, eventName, cwd, sessionID, sessionFile
+				event.ActivityKind, event.ActivityMessage = activityKind, activityMessage
 				if eventName == "todo" {
 					event.Todo = &oaktree.TodoSummary{Total: todoTotal, Pending: todoPending, InProgress: todoInProgress, Completed: todoCompleted}
 					if todoJSON != "" {
@@ -74,5 +75,7 @@ func newAgentEventHookCommand() *cobra.Command {
 	cmd.Flags().IntVar(&todoInProgress, "todo-in-progress", 0, "In-progress todo count")
 	cmd.Flags().IntVar(&todoCompleted, "todo-completed", 0, "Completed todo count")
 	cmd.Flags().StringVar(&todoJSON, "todo-json", "", "Visible todo tasks as JSON")
+	cmd.Flags().StringVar(&activityKind, "activity-kind", "", "Campfire activity kind")
+	cmd.Flags().StringVar(&activityMessage, "activity-message", "", "Campfire activity message")
 	return cmd
 }

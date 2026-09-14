@@ -34,31 +34,38 @@ type TodoSummary struct {
 	Tasks      []TodoTask `json:"tasks,omitempty"`
 }
 
+type CampfireMessage struct {
+	At      time.Time `json:"at"`
+	Kind    string    `json:"kind"`
+	Message string    `json:"message"`
+}
+
 type Session struct {
-	ID                   string       `json:"id"`
-	Root                 string       `json:"root"`
-	Workdir              string       `json:"workdir"`
-	RepoKey              string       `json:"repo_key"`
-	Branch               string       `json:"branch,omitempty"`
-	OwnedWorktree        bool         `json:"owned_worktree"`
-	TmuxSessionName      string       `json:"tmux_session_name"`
-	TmuxSessionID        string       `json:"tmux_session_id,omitempty"`
-	LeftPaneID           string       `json:"left_pane_id,omitempty"`
-	RightPaneID          string       `json:"right_pane_id,omitempty"`
-	AgentSessionIDs      []string     `json:"agent_session_ids,omitempty"`
-	AgentSessionFile     string       `json:"agent_session_file,omitempty"`
-	AgentStatus          AgentStatus  `json:"agent_status,omitempty"`
-	AgentStatusUpdatedAt *time.Time   `json:"agent_status_updated_at,omitempty"`
-	Tag                  SessionTag   `json:"tag,omitempty"`
-	TagUpdatedAt         *time.Time   `json:"tag_updated_at,omitempty"`
-	Note                 string       `json:"note,omitempty"`
-	Todo                 *TodoSummary `json:"todo,omitempty"`
-	GitStatus            *GitStatus   `json:"-"`
-	PR                   *PRInfo      `json:"pr,omitempty"`
-	CreatedAt            time.Time    `json:"created_at"`
-	UpdatedAt            time.Time    `json:"updated_at"`
-	LastHookAt           *time.Time   `json:"last_hook_at,omitempty"`
-	LastHookCwd          string       `json:"last_hook_cwd,omitempty"`
+	ID                   string            `json:"id"`
+	Root                 string            `json:"root"`
+	Workdir              string            `json:"workdir"`
+	RepoKey              string            `json:"repo_key"`
+	Branch               string            `json:"branch,omitempty"`
+	OwnedWorktree        bool              `json:"owned_worktree"`
+	TmuxSessionName      string            `json:"tmux_session_name"`
+	TmuxSessionID        string            `json:"tmux_session_id,omitempty"`
+	LeftPaneID           string            `json:"left_pane_id,omitempty"`
+	RightPaneID          string            `json:"right_pane_id,omitempty"`
+	AgentSessionIDs      []string          `json:"agent_session_ids,omitempty"`
+	AgentSessionFile     string            `json:"agent_session_file,omitempty"`
+	AgentStatus          AgentStatus       `json:"agent_status,omitempty"`
+	AgentStatusUpdatedAt *time.Time        `json:"agent_status_updated_at,omitempty"`
+	Tag                  SessionTag        `json:"tag,omitempty"`
+	TagUpdatedAt         *time.Time        `json:"tag_updated_at,omitempty"`
+	Note                 string            `json:"note,omitempty"`
+	Todo                 *TodoSummary      `json:"todo,omitempty"`
+	Campfire             []CampfireMessage `json:"campfire,omitempty"`
+	GitStatus            *GitStatus        `json:"-"`
+	PR                   *PRInfo           `json:"pr,omitempty"`
+	CreatedAt            time.Time         `json:"created_at"`
+	UpdatedAt            time.Time         `json:"updated_at"`
+	LastHookAt           *time.Time        `json:"last_hook_at,omitempty"`
+	LastHookCwd          string            `json:"last_hook_cwd,omitempty"`
 }
 
 type GitStatus struct {

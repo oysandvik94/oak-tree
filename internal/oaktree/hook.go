@@ -8,16 +8,24 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode"
+)
+
+const (
+	maxCampfireMessages = 25
+	campfireMinInterval = 90 * time.Second
 )
 
 type AgentEvent struct {
-	OakSessionID string       `json:"oak_session_id"`
-	TmuxPaneID   string       `json:"tmux_pane_id,omitempty"`
-	Event        string       `json:"event"`
-	Cwd          string       `json:"cwd,omitempty"`
-	SessionID    string       `json:"session_id,omitempty"`
-	SessionFile  string       `json:"session_file,omitempty"`
-	Todo         *TodoSummary `json:"todo,omitempty"`
+	OakSessionID    string       `json:"oak_session_id"`
+	TmuxPaneID      string       `json:"tmux_pane_id,omitempty"`
+	Event           string       `json:"event"`
+	Cwd             string       `json:"cwd,omitempty"`
+	SessionID       string       `json:"session_id,omitempty"`
+	SessionFile     string       `json:"session_file,omitempty"`
+	Todo            *TodoSummary `json:"todo,omitempty"`
+	ActivityKind    string       `json:"activity_kind,omitempty"`
+	ActivityMessage string       `json:"activity_message,omitempty"`
 }
 
 func ParseAgentEvent(r io.Reader) (AgentEvent, error) {
@@ -75,6 +83,12 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 			return err
 		}
 	}
+	if event.Event == "campfire" {
+		if err := validateCampfireMessage(event.ActivityKind, event.ActivityMessage); err != nil {
+			return err
+		}
+		event.ActivityMessage = strings.TrimSpace(event.ActivityMessage)
+	}
 	shouldNotifyQuestion := event.Event == "question" && session.AgentStatus != AgentStatusQuestion
 	shouldNotifySettled := event.Event == "agent_settled" && session.AgentStatus == AgentStatusWorking
 	now := time.Now().UTC()
@@ -107,6 +121,21 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 			summary := *event.Todo
 			stored.Todo = &summary
 			return nil
+		case "campfire":
+			if len(stored.Campfire) > 0 {
+				last := stored.Campfire[len(stored.Campfire)-1]
+				if last.Kind == event.ActivityKind && last.Message == event.ActivityMessage {
+					return nil
+				}
+				if now.Sub(last.At) < campfireMinInterval && !campfireRateLimitExempt(event.ActivityKind) {
+					return nil
+				}
+			}
+			stored.Campfire = append(stored.Campfire, CampfireMessage{At: now, Kind: event.ActivityKind, Message: event.ActivityMessage})
+			if len(stored.Campfire) > maxCampfireMessages {
+				stored.Campfire = stored.Campfire[len(stored.Campfire)-maxCampfireMessages:]
+			}
+			return nil
 		default:
 			return fmt.Errorf("unknown agent event %q", event.Event)
 		}
@@ -123,6 +152,31 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 		_ = s.Exec.Run(ctx, "notify-send", "Pi finished working", agentQuestionNotificationBody(*session))
 	}
 	return nil
+}
+
+func validateCampfireMessage(kind, message string) error {
+	switch kind {
+	case "plan", "discovery", "snag", "recovery", "tests", "milestone", "handoff", "aside":
+	default:
+		return fmt.Errorf("invalid Campfire kind %q", kind)
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return errors.New("invalid Campfire message")
+	}
+	for _, char := range message {
+		if unicode.IsControl(char) {
+			return errors.New("invalid Campfire message")
+		}
+	}
+	if len([]rune(message)) > 140 {
+		return errors.New("Campfire message exceeds 140 characters")
+	}
+	return nil
+}
+
+func campfireRateLimitExempt(kind string) bool {
+	return kind == "snag" || kind == "milestone" || kind == "handoff"
 }
 
 func validateTodoSummary(summary *TodoSummary) error {

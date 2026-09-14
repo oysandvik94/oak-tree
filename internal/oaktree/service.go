@@ -147,7 +147,7 @@ func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (
 	}
 	rightCommand, err := PiCommand(ctx, s.Paths, id)
 	if err != nil {
-		_ = os.Remove(SessionFilePath(s.Paths.StateDir, id))
+		_ = s.Store.DeleteSession(id)
 		if ownedWorktree {
 			_ = RemoveWorktree(ctx, s.Exec, root, workdir)
 		}
@@ -158,7 +158,7 @@ func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (
 		if ownedWorktree {
 			_ = RemoveWorktree(ctx, s.Exec, root, workdir)
 		}
-		_ = os.Remove(SessionFilePath(s.Paths.StateDir, id))
+		_ = s.Store.DeleteSession(id)
 		return Session{}, createSessionStepError(root, fmt.Sprintf("create tmux session %s in %s", sessionName, workdir), err)
 	}
 	session.TmuxSessionName, session.TmuxSessionID = tmuxSession.Name, tmuxSession.ID
@@ -169,7 +169,7 @@ func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (
 		return nil
 	}); err != nil {
 		_ = KillTmuxSession(ctx, s.Exec, tmuxSession.Name)
-		_ = os.Remove(SessionFilePath(s.Paths.StateDir, id))
+		_ = s.Store.DeleteSession(id)
 		if ownedWorktree {
 			_ = RemoveWorktree(ctx, s.Exec, root, workdir)
 		}
@@ -332,7 +332,7 @@ func (s *Service) CloseSessionWithFallback(ctx context.Context, id, fallbackTmux
 			return err
 		}
 	}
-	return os.Remove(SessionFilePath(s.Paths.StateDir, session.ID))
+	return s.Store.DeleteSession(session.ID)
 }
 
 func (s *Service) PreviewSession(ctx context.Context, session Session) (string, error) {

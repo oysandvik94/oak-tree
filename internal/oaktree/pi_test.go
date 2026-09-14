@@ -2,6 +2,7 @@ package oaktree
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,10 +21,14 @@ func TestEnsurePiExtensionContainsLifecycleAndQuestionTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "registerCommand(\"oak-tree\"", "Usage: /oak-tree register", "managed: ctx.mode === \"tui\"", "!extra.managed", "tmux_pane", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()"} {
+	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "registerCommand(\"oak-tree\"", "Usage: /oak-tree register", "managed: ctx.mode === \"tui\"", "!extra.managed", "tmux_pane", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()", "campfire_update", "activity_kind", "activity_message", "StringEnum", "meaningful plan", "never invent progress"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("extension missing %q", want)
 		}
+	}
+	source := string(data)
+	if call, registered := strings.Index(source, "registerCampfireTool();"), strings.Index(source, "if (!await hook(\"session_start\""); call < registered {
+		t.Fatal("Campfire tool must only register after the managed session hook succeeds")
 	}
 	if strings.Contains(string(data), "subagent") {
 		t.Fatal("extension must not integrate pi-subagents")
@@ -208,6 +213,71 @@ func TestHandleAgentEventStoresTodoSummaryWithoutChangingAgentStatus(t *testing.
 	}
 	if err := svc.HandleAgentEvent(context.Background(), AgentEvent{OakSessionID: "oak-todo", Event: "todo", Todo: &TodoSummary{Total: 1, Pending: 1, Tasks: []TodoTask{{Subject: "Wrong status", Status: "completed"}}}}); err == nil {
 		t.Fatal("todo details inconsistent with counts were accepted")
+	}
+}
+
+func TestHandleAgentEventStoresBoundedCampfireMessages(t *testing.T) {
+	state := t.TempDir()
+	store := NewStore(state)
+	updatedAt := time.Now().UTC().Add(-time.Minute)
+	if err := store.SaveSession(Session{ID: "oak-campfire", RightPaneID: "%2", AgentStatus: AgentStatusWorking, AgentStatusUpdatedAt: &updatedAt, CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(Paths{StateDir: state}, store, &stubRunner{})
+
+	post := func(kind, message string) error {
+		return svc.HandleAgentEvent(context.Background(), AgentEvent{OakSessionID: "oak-campfire", Event: "campfire", ActivityKind: kind, ActivityMessage: message})
+	}
+	if err := post("plan", "  Tracing the event pipeline.  "); err != nil {
+		t.Fatal(err)
+	}
+	if err := post("discovery", "This should be rate limited."); err != nil {
+		t.Fatal(err)
+	}
+	if err := post("snag", "Found a real blocker; changing course."); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.LoadSession("oak-campfire")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Campfire) != 2 || got.Campfire[0].Message != "Tracing the event pipeline." || got.Campfire[1].Kind != "snag" {
+		t.Fatalf("Campfire = %#v", got.Campfire)
+	}
+	if got.AgentStatus != AgentStatusWorking || got.AgentStatusUpdatedAt == nil || !got.AgentStatusUpdatedAt.Equal(updatedAt) {
+		t.Fatalf("Campfire event changed agent status: %#v", got)
+	}
+
+	if err := store.UpdateSession("oak-campfire", func(session *Session) error {
+		session.Campfire = make([]CampfireMessage, maxCampfireMessages)
+		for i := range session.Campfire {
+			session.Campfire[i] = CampfireMessage{At: time.Now().UTC(), Kind: "tests", Message: fmt.Sprintf("message %d", i)}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := post("milestone", "Backend complete; starting frontend."); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.LoadSession("oak-campfire")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Campfire) != maxCampfireMessages || got.Campfire[0].Message != "message 1" || got.Campfire[len(got.Campfire)-1].Message != "Backend complete; starting frontend." {
+		t.Fatalf("bounded Campfire = %#v", got.Campfire)
+	}
+
+	for _, event := range []AgentEvent{
+		{ActivityKind: "noise", ActivityMessage: "Nope"},
+		{ActivityKind: "tests", ActivityMessage: "two\nlines"},
+		{ActivityKind: "tests", ActivityMessage: "terminal\x1b[2Jescape"},
+		{ActivityKind: "tests", ActivityMessage: strings.Repeat("x", 141)},
+	} {
+		event.OakSessionID, event.Event = "oak-campfire", "campfire"
+		if err := svc.HandleAgentEvent(context.Background(), event); err == nil {
+			t.Fatalf("invalid Campfire event accepted: %#v", event)
+		}
 	}
 }
 

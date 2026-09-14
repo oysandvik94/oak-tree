@@ -16,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	clipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type dashboardMsg struct {
@@ -1712,6 +1713,10 @@ func (m DashboardModel) renderHeader(width int) string {
 
 func (m DashboardModel) renderBody(width, height int) string {
 	if m.kanbanView {
+		if width >= 118 {
+			railWidth := min(52, max(36, width/4))
+			return lipgloss.JoinHorizontal(lipgloss.Top, m.renderKanbanPanel(width-railWidth-3, height), " ", m.renderCampfireRail(railWidth, height))
+		}
 		return m.renderKanbanPanel(width, height)
 	}
 	return m.renderSessionsPanel(width, height)
@@ -1811,6 +1816,82 @@ func (m DashboardModel) renderSessionsPanel(width, height int) string {
 		}
 	}
 	return panelStyle.Render(strings.Join([]string{title, summary, head, strings.Join(rows, "\n")}, "\n"))
+}
+
+type campfireFeedItem struct {
+	session Session
+	message CampfireMessage
+}
+
+func (m DashboardModel) renderCampfireRail(width, height int) string {
+	innerWidth := max(12, width-4)
+	panelStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("60")).Padding(0, 1).Width(width).Height(max(5, height))
+	items := make([]campfireFeedItem, 0)
+	for _, session := range m.sessions {
+		for _, message := range session.Campfire {
+			items = append(items, campfireFeedItem{session: session, message: message})
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].message.At.After(items[j].message.At) })
+
+	title := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render("🔥 Campfire")
+	live := lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true).Render("LIVE")
+	title += strings.Repeat(" ", max(1, innerWidth-lipgloss.Width(title)-lipgloss.Width(live))) + live
+	if len(items) == 0 {
+		empty := lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render("No sparks yet.")
+		return panelStyle.Render(title + "\n\n" + empty)
+	}
+
+	lines := []string{title}
+	remaining := max(0, height-3)
+	for _, item := range items {
+		kind, color := campfireKindStyle(item.message.Kind)
+		age := formatRelativeAge(item.message.At, time.Now())
+		meta := renderTinyPill(kind, color) + " " + lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Bold(true).Render(ansi.Truncate(sessionProjectName(item.session), max(1, innerWidth-lipgloss.Width(kind)-lipgloss.Width(age)-5), "…"))
+		if age != "" {
+			meta += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render(age)
+		}
+		wrapped := strings.Split(clipgloss.Wrap(item.message.Message, innerWidth, "-_/"), "\n")
+		if len(wrapped) > 2 {
+			wrapped = wrapped[:2]
+			wrapped[1] = ansi.Truncate(wrapped[1], max(1, innerWidth-1), "") + "…"
+		}
+		needed := 1 + len(wrapped)
+		if len(lines) > 1 {
+			needed++
+		}
+		if needed > remaining {
+			break
+		}
+		if len(lines) > 1 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, meta)
+		for _, line := range wrapped {
+			lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(line))
+		}
+		remaining -= needed
+	}
+	return panelStyle.Render(strings.Join(lines, "\n"))
+}
+
+func campfireKindStyle(kind string) (string, string) {
+	switch kind {
+	case "snag":
+		return "SNAG", "203"
+	case "recovery", "milestone":
+		return strings.ToUpper(kind), "82"
+	case "tests":
+		return "TESTS", "214"
+	case "handoff":
+		return "HANDOFF", "170"
+	case "aside":
+		return "ASIDE", "246"
+	case "discovery":
+		return "DISCOVERY", "75"
+	default:
+		return "PLAN", "81"
+	}
 }
 
 func (m DashboardModel) renderKanbanPanel(width, height int) string {

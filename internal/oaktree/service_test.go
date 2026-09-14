@@ -315,6 +315,9 @@ func TestCreateSessionNewBranchConfiguresSameNameUpstream(t *testing.T) {
 	if session.Workdir != worktreePath {
 		t.Fatalf("CreateSession() workdir = %q, want %q", session.Workdir, worktreePath)
 	}
+	if session.RightPaneID != "%3" {
+		t.Fatalf("CreateSession() right pane = %q, want %%3", session.RightPaneID)
+	}
 	wantFetch := []string{"git", "-C", root, "fetch", "--prune", "origin", "+refs/heads/develop:refs/remotes/origin/develop"}
 	wantAdd := []string{"git", "-C", root, "worktree", "add", "-b", branch, "--no-track", worktreePath, "origin/develop"}
 	wantRemote := []string{"git", "-C", root, "config", "branch." + branch + ".remote", "origin"}
