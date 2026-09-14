@@ -21,7 +21,7 @@ func TestEnsurePiExtensionContainsLifecycleAndQuestionTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "registerCommand(\"oak-tree\"", "Usage: /oak-tree register", "managed: ctx.mode === \"tui\"", "!extra.managed", "tmux_pane", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()", "campfire_update", "activity_kind", "activity_message", "StringEnum", "meaningful plan", "never invent progress"} {
+	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "registerCommand(\"oak-tree\"", "Usage: /oak-tree register", "managed: ctx.mode === \"tui\"", "!extra.managed", "tmux_pane", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()", "campfire_update", "activity_kind", "activity_message", "StringEnum", "meaningful plan", "ordinary next steps", "tangible completed result", "actually transfers", "never use exempt kinds", "never invent progress"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("extension missing %q", want)
 		}
