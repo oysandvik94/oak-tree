@@ -16,8 +16,35 @@ func newHookCommand() *cobra.Command {
 		SilenceUsage: true,
 		Short:        "Pi lifecycle hook entrypoint",
 	}
-	cmd.AddCommand(newAgentEventHookCommand())
+	cmd.AddCommand(newAgentEventHookCommand(), newCampfireReadHookCommand())
 	return cmd
+}
+
+func newCampfireReadHookCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:          "campfire-read",
+		SilenceUsage: true,
+		Short:        "Print the latest Campfire updates as JSON",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			svc, err := newService()
+			if err != nil {
+				return err
+			}
+			messages, err := svc.Store.LoadCampfire()
+			if err != nil {
+				return fmt.Errorf("load Campfire: %w", err)
+			}
+			const limit = 12
+			if len(messages) > limit {
+				messages = messages[len(messages)-limit:]
+			}
+			recent := make([]oaktree.CampfireMessage, len(messages))
+			for i := range messages {
+				recent[i] = messages[len(messages)-1-i]
+			}
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(recent)
+		},
+	}
 }
 
 func newAgentEventHookCommand() *cobra.Command {

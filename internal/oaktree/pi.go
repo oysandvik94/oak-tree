@@ -76,6 +76,7 @@ export default function (pi) {
     }
     await reportTodos(ctx, latest);
     registerCampfireTool();
+    registerCampfireReadTool();
     if (!pi.getAllTools().some((tool) => tool.name === "ask_user_question")) registerQuestionTool();
     return true;
   }
@@ -150,6 +151,30 @@ export default function (pi) {
         const sent = await hook("campfire", { ...identity(ctx), activity_kind: params.kind, activity_message: params.message });
         if (!sent) throw new Error("Could not post Campfire update");
         return { content: [{ type: "text", text: "Campfire update posted." }], details: params };
+      },
+    });
+  }
+
+  function registerCampfireReadTool() {
+    if (pi.getAllTools().some((tool) => tool.name === "campfire_read")) return;
+    pi.registerTool({
+      name: "campfire_read",
+      label: "Read Campfire",
+      description: "Read a compact, newest-first slice of the shared oak-tree Campfire feed.",
+      promptSnippet: "Read the recent shared Campfire feed when useful",
+      promptGuidelines: [
+        "Use campfire_read sparingly for ambient awareness or when you have a genuine, useful reaction to another agent’s update.",
+        "Campfire is a shared social feed, not a coordination channel: use pi-intercom for related work that needs direct coordination.",
+        "Do not poll Campfire or read it automatically. Reply with a brief aside only when it adds something real.",
+      ],
+      executionMode: "sequential",
+      parameters: Type.Object({}),
+      async execute() {
+        const command = process.env.OAK_TREE_HOOK || "oak-tree";
+        const result = await pi.exec(command, ["hook", "campfire-read"], { timeout: 2000 });
+        if (result.code !== 0) throw new Error(result.stderr.trim() || "Could not read Campfire");
+        const messages = result.stdout.trim();
+        return { content: [{ type: "text", text: messages === "[]" || !messages ? "Campfire is quiet." : messages }], details: { messages } };
       },
     });
   }
