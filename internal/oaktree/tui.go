@@ -116,6 +116,7 @@ type tagOption struct {
 
 var sessionTagOptions = []tagOption{
 	{Tag: SessionTagNone, Label: "active", Color: "81"},
+	{Tag: SessionTagTesting, Label: "testing", Color: "214"},
 	{Tag: SessionTagWaitingReview, Label: "waiting review", Color: "244"},
 	{Tag: SessionTagBlocked, Label: "blocked", Color: "203"},
 }
@@ -539,39 +540,40 @@ func rootCandidateItems(candidates []rootCandidate) []list.Item {
 }
 
 type DashboardModel struct {
-	svc                *Service
-	sessions           []Session
-	selected           int
-	help               help.Model
-	usage              UsageCache
-	usageLoaded        bool
-	usageStale         bool
-	usageErr           error
-	status             string
-	err                error
-	width              int
-	height             int
-	mode               mode
-	form               createForm
-	rootCandidates     []rootCandidate
-	confirmClose       bool
-	tagCursor          int
-	tagUpdating        bool
-	noteInput          textinput.Model
-	noteUpdating       bool
-	creating           bool
-	attaching          bool
-	closing            bool
-	prRefreshing       bool
-	prRefreshInFlight  map[string]struct{}
-	prAutoRefreshing   int
-	openingPR          bool
-	usageRefreshing    bool
-	motionFrame        int
-	motionTickerActive bool
-	todoExpanded       bool
-	kanbanView         bool
-	statusSeenAt       map[string]time.Time
+	svc                  *Service
+	sessions             []Session
+	selected             int
+	help                 help.Model
+	usage                UsageCache
+	usageLoaded          bool
+	usageStale           bool
+	usageErr             error
+	status               string
+	err                  error
+	width                int
+	height               int
+	mode                 mode
+	form                 createForm
+	rootCandidates       []rootCandidate
+	confirmClose         bool
+	tagCursor            int
+	tagUpdating          bool
+	noteInput            textinput.Model
+	noteUpdating         bool
+	creating             bool
+	attaching            bool
+	closing              bool
+	prRefreshing         bool
+	prRefreshInFlight    map[string]struct{}
+	prAutoRefreshing     int
+	openingPR            bool
+	usageRefreshing      bool
+	motionFrame          int
+	motionTickerActive   bool
+	todoExpanded         bool
+	kanbanView           bool
+	kanbanBoardSessionID string
+	statusSeenAt         map[string]time.Time
 }
 
 func NewDashboardModel(svc *Service, cfg Config) DashboardModel {
@@ -1072,13 +1074,13 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.form.branchesLoading = false
-		if msg.err != nil {
-			m.err = msg.err
-			return m, nil
-		}
-		m.err = nil
 		m.form.branchCandidates = msg.branches
 		m.form.applyBranchFilter()
+		if msg.err != nil {
+			m.err = msg.err
+			return m.withAnimationCmd()
+		}
+		m.err = nil
 		return m.withAnimationCmd()
 	case createResultMsg:
 		m.creating = false
@@ -1333,6 +1335,35 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case "tab":
+		if !m.kanbanView {
+			return m, nil
+		}
+		if sel := m.currentSession(); sel != nil && sel.Tag == SessionTagTesting {
+			for i := range m.sessions {
+				if m.sessions[i].ID == m.kanbanBoardSessionID && m.sessions[i].Tag != SessionTagTesting {
+					m.selected = i
+					return m.syncStatusSeenAt().withAnimationCmd()
+				}
+			}
+			for i := range m.sessions {
+				if m.sessions[i].Tag != SessionTagTesting {
+					m.selected = i
+					return m.syncStatusSeenAt().withAnimationCmd()
+				}
+			}
+			return m, nil
+		}
+		if sel := m.currentSession(); sel != nil {
+			m.kanbanBoardSessionID = sel.ID
+		}
+		for i := range m.sessions {
+			if m.sessions[i].Tag == SessionTagTesting {
+				m.selected = i
+				return m.syncStatusSeenAt().withAnimationCmd()
+			}
+		}
+		return m, nil
 	case "h", "left":
 		if m.kanbanView {
 			m.selected = kanbanSelection(m.sessions, m.selected, -1, 0)
@@ -1350,6 +1381,9 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.kanbanView {
+			if m.sessions[m.selected].Tag == SessionTagTesting {
+				return m, nil
+			}
 			m.selected = kanbanSelection(m.sessions, m.selected, 0, 1)
 			return m.syncStatusSeenAt().withAnimationCmd()
 		}
@@ -1363,6 +1397,9 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.kanbanView {
+			if m.sessions[m.selected].Tag == SessionTagTesting {
+				return m, nil
+			}
 			m.selected = kanbanSelection(m.sessions, m.selected, 0, -1)
 			return m.syncStatusSeenAt().withAnimationCmd()
 		}
@@ -1465,7 +1502,7 @@ func (m DashboardModel) updateCreate(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.form.stage == createStageBranch {
 			m.form.toggleBranchMode()
 			m.err = nil
-			if m.form.branchMode == BranchModeOpenExisting && len(m.form.branchCandidates) == 0 {
+			if m.form.branchMode == BranchModeOpenExisting {
 				m.form.branchesLoading = true
 				return m.withAnimationCmd(m.branchListCmd(m.form.selectedRootPath))
 			}
@@ -1782,9 +1819,14 @@ func (m DashboardModel) renderKanbanPanel(width, height int) string {
 	panelStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("60")).Padding(0, 1).Width(panelWidth).Height(max(5, height))
 	counts := [5]int{}
 	buckets := [5][]int{}
+	testingIndexes := []int{}
 	for i, session := range m.sessions {
 		bucket := sessionDashboardBucket(session)
 		counts[bucket]++
+		if session.Tag == SessionTagTesting {
+			testingIndexes = append(testingIndexes, i)
+			continue
+		}
 		buckets[bucket] = append(buckets[bucket], i)
 	}
 	parked := counts[3] + counts[4]
@@ -1797,6 +1839,11 @@ func (m DashboardModel) renderKanbanPanel(width, height int) string {
 	colors := [5]string{"81", "214", "82", "170", "203"}
 	columnWidth := max(6, (innerWidth-4)/5)
 	columnHeight := max(1, height-4)
+	parts := []string{title, summary}
+	if len(testingIndexes) > 0 {
+		parts = append(parts, m.renderTestingStrip(testingIndexes, innerWidth))
+		columnHeight = max(1, columnHeight-3)
+	}
 	columns := make([]string, 0, 9)
 	for i := range labels {
 		if i > 0 {
@@ -1804,7 +1851,46 @@ func (m DashboardModel) renderKanbanPanel(width, height int) string {
 		}
 		columns = append(columns, m.renderKanbanColumn(labels[i], colors[i], buckets[i], columnWidth, columnHeight))
 	}
-	return panelStyle.Render(strings.Join([]string{title, summary, lipgloss.JoinHorizontal(lipgloss.Top, columns...)}, "\n"))
+	parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, columns...))
+	return panelStyle.Render(strings.Join(parts, "\n"))
+}
+
+func (m DashboardModel) renderTestingStrip(sessionIndexes []int, width int) string {
+	sessionIndex := sessionIndexes[0]
+	position := 0
+	for i, index := range sessionIndexes {
+		if index == m.selected {
+			sessionIndex = index
+			position = i
+			break
+		}
+	}
+	active := sessionIndex == m.selected
+	session := m.sessions[sessionIndex]
+	foreground, background := tableRowColors(active)
+	state, stateColor, stateBackground := agentStateChipAtFrame(session.AgentStatus, m.motionFrame)
+	stateChip := renderTableCell(tableChipCell(state, stateColor, stateBackground), lipgloss.Width(state), background, false)
+	labelText := "TESTING NOW"
+	if len(sessionIndexes) > 1 {
+		labelText += fmt.Sprintf(" %d/%d", position+1, len(sessionIndexes))
+	}
+	label := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render(labelText)
+	hint := "TAB focus"
+	border := "60"
+	if active {
+		hint = "TAB board"
+		border = "214"
+	}
+	details := sessionProjectName(session)
+	if branch := strings.TrimSpace(session.Branch); branch != "" {
+		details += "  " + branch
+	}
+	if todo, _, _ := todoSummaryChip(session.Todo); todo != "—" {
+		details += "  " + todo
+	}
+	details = truncateMiddle(details, max(1, width-lipgloss.Width(label)-lipgloss.Width(stateChip)-lipgloss.Width(hint)-10))
+	line := label + "  " + stateChip + "  " + lipgloss.NewStyle().Foreground(lipgloss.Color(foreground)).Background(lipgloss.Color(background)).Render(details) + "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(hint)
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(border)).Width(max(1, width-2)).Render(line)
 }
 
 func (m DashboardModel) renderKanbanColumn(label, color string, sessionIndexes []int, width, height int) string {
@@ -1856,14 +1942,17 @@ func (m DashboardModel) renderKanbanCard(session Session, selected bool, width i
 		branch = "—"
 	}
 	meta := []string{}
+	prBadge := ""
+	if session.PR != nil && session.PR.Found {
+		label, color := prCardStatus(session.PR)
+		prBadge = renderTableCell(tableChipCell(label, color, tableChipBackground(color)), min(titleWidth, lipgloss.Width(label)), background, false)
+		meta = append(meta, fmt.Sprintf("#%d", session.PR.Number))
+	}
 	if age := sessionParkedAge(session, time.Now()); age != "" {
 		meta = append(meta, "age "+age)
 	}
 	if session.GitStatus != nil {
 		meta = append(meta, gitStatusChip(session.GitStatus))
-	}
-	if session.PR != nil && session.PR.Found {
-		meta = append(meta, fmt.Sprintf("#%d", session.PR.Number))
 	}
 	if todo, _, _ := todoSummaryChip(session.Todo); todo != "—" {
 		meta = append(meta, todo)
@@ -1871,10 +1960,22 @@ func (m DashboardModel) renderKanbanCard(session Session, selected bool, width i
 	if usage, ok := m.usage.ForSessionIDs(sessionUsageIDs(session)); ok {
 		meta = append(meta, formatUSD(usage.TotalCostUSD))
 	}
-	metaLine := joinStatusItems(titleWidth, meta)
-	if metaLine == "" {
+	metaWidth := titleWidth
+	if prBadge != "" {
+		metaWidth -= lipgloss.Width(prBadge) + 2
+	}
+	metaLine := joinStatusItems(metaWidth, meta)
+	if prBadge == "" && metaLine == "" {
 		metaLine = "—"
 	}
+	metaLine = renderTableSegment(metaLine, "246", background, false)
+	if prBadge != "" {
+		if metaLine != "" {
+			prBadge += renderTableSegment("  ", "246", background, false)
+		}
+		metaLine = prBadge + metaLine
+	}
+	metaLine += renderTableSegment(strings.Repeat(" ", max(0, titleWidth-lipgloss.Width(metaLine))), "246", background, false)
 	padding := strings.Repeat(" ", max(0, titleTextWidth-lipgloss.Width(title)))
 	first := renderTableSegment(prefix, accent, background, selected)
 	if noteIcon != "" {
@@ -1884,7 +1985,7 @@ func (m DashboardModel) renderKanbanCard(session Session, selected bool, width i
 	return []string{
 		first,
 		renderTableSegment("  "+padTableCell(branch, titleWidth), "246", background, false),
-		renderTableSegment("  "+padTableCell(metaLine, titleWidth), "246", background, false),
+		renderTableSegment("  ", "246", background, false) + metaLine,
 	}
 }
 
@@ -1894,8 +1995,25 @@ func kanbanSelection(sessions []Session, selected, columnDelta, rowDelta int) in
 	}
 	buckets := [5][]int{}
 	for i, session := range sessions {
+		if session.Tag == SessionTagTesting {
+			continue
+		}
 		bucket := sessionDashboardBucket(session)
 		buckets[bucket] = append(buckets[bucket], i)
+	}
+	if sessions[selected].Tag == SessionTagTesting {
+		testing := []int{}
+		for i := range sessions {
+			if sessions[i].Tag == SessionTagTesting {
+				testing = append(testing, i)
+			}
+		}
+		for i, index := range testing {
+			if index == selected {
+				return testing[max(0, min(i+columnDelta, len(testing)-1))]
+			}
+		}
+		return selected
 	}
 	currentBucket := sessionDashboardBucket(sessions[selected])
 	currentRow := 0
@@ -2040,17 +2158,27 @@ func sessionTableStateChip(session Session) (string, string, string) {
 }
 
 func sessionTableStateChipAtFrame(session Session, frame int) (string, string, string) {
+	if session.Tag == SessionTagTesting {
+		return "󰙨 TESTING", "214", "#4a3818"
+	}
 	switch sessionDashboardBucket(session) {
-	case 0:
-		return " QUESTION", "81", "#263d4a"
-	case 1:
-		return workingStateChip(frame), "214", "#4a3818"
-	case 2:
-		return " READY", "82", "#244b2b"
 	case 3:
 		return " REVIEW", "170", "#4b2847"
-	default:
+	case 4:
 		return " BLOCKED", "203", "#4a2525"
+	default:
+		return agentStateChipAtFrame(session.AgentStatus, frame)
+	}
+}
+
+func agentStateChipAtFrame(status AgentStatus, frame int) (string, string, string) {
+	switch status {
+	case AgentStatusQuestion:
+		return " QUESTION", "81", "#263d4a"
+	case AgentStatusWorking:
+		return workingStateChip(frame), "214", "#4a3818"
+	default:
+		return " READY", "82", "#244b2b"
 	}
 }
 
@@ -2320,7 +2448,7 @@ func formatRelativeAge(at, now time.Time) string {
 }
 
 func sessionParkedAge(session Session, now time.Time) string {
-	if session.Tag == SessionTagNone {
+	if session.Tag == SessionTagNone || session.Tag == SessionTagTesting {
 		return ""
 	}
 	at := session.CreatedAt
@@ -2328,6 +2456,29 @@ func sessionParkedAge(session Session, now time.Time) string {
 		at = *session.TagUpdatedAt
 	}
 	return strings.TrimSuffix(formatRelativeAge(at, now), " ago")
+}
+
+// prCardStatus prioritizes lifecycle over review; approval alone does not imply merge readiness.
+func prCardStatus(info *PRInfo) (string, string) {
+	switch strings.ToLower(strings.TrimSpace(info.State)) {
+	case "merged":
+		return "MERGED", "170"
+	case "closed":
+		return "CLOSED", "244"
+	}
+	if info.IsDraft {
+		return "DRAFT", "214"
+	}
+	switch strings.ToLower(strings.TrimSpace(info.ReviewDecision)) {
+	case "approved":
+		return "APPROVED", "82"
+	case "changes_requested":
+		return "CHANGES", "203"
+	case "review_required":
+		return "REVIEW", "214"
+	default:
+		return "OPEN", "81"
+	}
 }
 
 func prReadinessChip(info *PRInfo) (string, string) {
@@ -2503,10 +2654,16 @@ func (m DashboardModel) footerBindings() []key.Binding {
 		if m.kanbanView {
 			move = key.NewBinding(key.WithKeys("h", "j", "k", "l", "up", "down", "left", "right"), key.WithHelp("hjkl", "move"))
 		}
-		bindings := []key.Binding{
-			move,
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "attach")),
+		bindings := []key.Binding{move}
+		if m.kanbanView {
+			for _, session := range m.sessions {
+				if session.Tag == SessionTagTesting {
+					bindings = append(bindings, key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "area")))
+					break
+				}
+			}
 		}
+		bindings = append(bindings, key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "attach")))
 		if !m.kanbanView {
 			if selected := m.currentSession(); selected != nil && selected.Todo != nil && len(selected.Todo.Tasks) > 0 {
 				bindings = append(bindings, key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "todo")))

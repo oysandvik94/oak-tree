@@ -190,6 +190,106 @@ func TestVToggleRendersKanbanBoard(t *testing.T) {
 	}
 }
 
+func TestKanbanShowsTestingSessionInFocusStrip(t *testing.T) {
+	model := NewDashboardModel(&Service{}, Config{})
+	model.width, model.height = 180, 26
+	model.kanbanView = true
+	model.sessions = []Session{
+		{ID: "testing", Root: "/repo/accounting-consumer", Branch: "esb_login", AgentStatus: AgentStatusWorking, Tag: SessionTagTesting, Todo: &TodoSummary{Total: 26, Completed: 25}},
+		{ID: "question", Root: "/repo/identity", AgentStatus: AgentStatusQuestion},
+	}
+
+	rendered := model.View().Content
+	for _, want := range []string{"2 active", "TESTING NOW", "WORKING", "accounting-consumer", "esb_login", "25/26", "QUESTION 1"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("kanban testing strip missing %q: %q", want, rendered)
+		}
+	}
+	model.sessions[0].AgentStatus = AgentStatusAttention
+	if rendered := model.View().Content; !strings.Contains(rendered, "READY") {
+		t.Fatalf("ready testing session missing state: %q", rendered)
+	}
+	if got := lipgloss.Height(rendered); got != model.height {
+		t.Fatalf("kanban height = %d, want %d", got, model.height)
+	}
+}
+
+func TestTabSwitchesKanbanFocusBetweenTestingAndBoard(t *testing.T) {
+	model := NewDashboardModel(&Service{}, Config{})
+	model.kanbanView = true
+	model.sessions = []Session{
+		{ID: "working", AgentStatus: AgentStatusWorking},
+		{ID: "testing", AgentStatus: AgentStatusWorking, Tag: SessionTagTesting},
+		{ID: "ready", AgentStatus: AgentStatusIdle},
+	}
+	model.selected = 0
+
+	updated, _ := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	next := updated.(DashboardModel)
+	if got := next.currentSession().ID; got != "testing" {
+		t.Fatalf("tab selected %q, want testing", got)
+	}
+	updated, _ = next.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	next = updated.(DashboardModel)
+	if got := next.currentSession().ID; got != "testing" {
+		t.Fatalf("down left testing area for %q", got)
+	}
+	updated, _ = next.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	next = updated.(DashboardModel)
+	if got := next.currentSession().ID; got != "working" {
+		t.Fatalf("tab restored %q, want working", got)
+	}
+	updated, _ = next.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
+	next = updated.(DashboardModel)
+	if got := next.currentSession().ID; got != "ready" {
+		t.Fatalf("right selected %q, want ready without crossing testing area", got)
+	}
+}
+
+func TestKanbanCardShowsPRStatusWithoutSelection(t *testing.T) {
+	model := NewDashboardModel(&Service{}, Config{})
+	for _, tc := range []struct {
+		name, state, decision, want string
+		draft                       bool
+	}{
+		{"merged overrides approval", "MERGED", "APPROVED", "MERGED", false},
+		{"closed overrides draft", "CLOSED", "APPROVED", "CLOSED", true},
+		{"draft overrides approval", "OPEN", "APPROVED", "DRAFT", true},
+		{"approved", "OPEN", "APPROVED", "APPROVED", false},
+		{"changes", "OPEN", "CHANGES_REQUESTED", "CHANGES", false},
+		{"review", "OPEN", "REVIEW_REQUIRED", "REVIEW", false},
+		{"unknown review", "OPEN", "", "OPEN", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			session := Session{Root: "/repo/project", Branch: "feature/example", Tag: SessionTagWaitingReview,
+				CreatedAt: time.Now().Add(-72 * time.Hour), GitStatus: &GitStatus{Clean: false},
+				PR: &PRInfo{Found: true, Number: 1240, State: tc.state, ReviewDecision: tc.decision, IsDraft: tc.draft}}
+			for _, selected := range []bool{false, true} {
+				for _, width := range []int{12, 30, 52} {
+					lines := model.renderKanbanCard(session, selected, width, "170")
+					if len(lines) != 3 || !strings.Contains(lines[2], tc.want) {
+						t.Fatalf("card missing %s: %q", tc.want, lines)
+					}
+					if width >= 30 && !strings.Contains(lines[2], "#1240") {
+						t.Fatalf("card missing PR number: %q", lines)
+					}
+					for _, line := range lines {
+						if lipgloss.Width(line) > width {
+							t.Fatalf("card exceeds width %d: %q", width, line)
+						}
+					}
+				}
+			}
+		})
+	}
+	for _, pr := range []*PRInfo{nil, {Found: false}} {
+		lines := model.renderKanbanCard(Session{Root: "/repo/project", PR: pr}, false, 30, "170")
+		if strings.TrimSpace(lines[2]) != "—" {
+			t.Fatalf("card without PR shows status: %q", lines[2])
+		}
+	}
+}
+
 func TestDashboardMarksStatusChangesUntilSessionIsSelected(t *testing.T) {
 	stateDir := t.TempDir()
 	store := NewStore(stateDir)
@@ -278,6 +378,7 @@ func TestSessionTableSemanticChipsUseExpectedIconsAndColors(t *testing.T) {
 		{Session{AgentStatus: AgentStatusWorking}, "⠋ WORKING", "214"},
 		{Session{AgentStatus: AgentStatusAttention}, " READY", "82"},
 		{Session{AgentStatus: AgentStatusIdle}, " READY", "82"},
+		{Session{AgentStatus: AgentStatusWorking, Tag: SessionTagTesting}, "󰙨 TESTING", "214"},
 		{Session{AgentStatus: AgentStatusWorking, Tag: SessionTagWaitingReview}, " REVIEW", "170"},
 		{Session{AgentStatus: AgentStatusWorking, Tag: SessionTagBlocked}, " BLOCKED", "203"},
 	}
@@ -786,6 +887,8 @@ func TestSessionTagPickerPersistsBlockedAndMovesSessionDown(t *testing.T) {
 	if next.mode != modeTagPicker {
 		t.Fatalf("mode = %v, want tag picker", next.mode)
 	}
+	updated, _ = next.Update(tea.KeyPressMsg(tea.Key{Code: 'j', Text: "j"}))
+	next = updated.(DashboardModel)
 	updated, _ = next.Update(tea.KeyPressMsg(tea.Key{Code: 'j', Text: "j"}))
 	next = updated.(DashboardModel)
 	updated, _ = next.Update(tea.KeyPressMsg(tea.Key{Code: 'j', Text: "j"}))

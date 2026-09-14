@@ -222,6 +222,8 @@ func normalizeSessionTag(tag SessionTag) (SessionTag, error) {
 	switch normalized := SessionTag(strings.ToLower(strings.TrimSpace(string(tag)))); normalized {
 	case SessionTagNone:
 		return SessionTagNone, nil
+	case SessionTagTesting:
+		return SessionTagTesting, nil
 	case SessionTagWaitingReview:
 		return SessionTagWaitingReview, nil
 	case SessionTagBlocked:

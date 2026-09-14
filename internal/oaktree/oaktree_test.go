@@ -169,6 +169,25 @@ func TestFetchBranchUsesPruningRemoteTrackingRefspec(t *testing.T) {
 	}
 }
 
+func TestSeedGraphify(t *testing.T) {
+	root := t.TempDir()
+	worktree := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "graphify-out"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "graphify-out", "graph.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedGraphify(root, worktree); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"graph.json", "needs_update"} {
+		if _, err := os.Stat(filepath.Join(worktree, "graphify-out", name)); err != nil {
+			t.Errorf("seeded %s: %v", name, err)
+		}
+	}
+}
+
 func TestTmuxCommandArgs(t *testing.T) {
 	newArgs := NewSessionCommandArgs("oak-123", "/repo", []string{"nvim"})
 	wantNew := []string{"new-session", "-d", "-P", "-F", "#{session_id}\t#{pane_id}", "-s", "oak-123", "-c", "/repo", "nvim"}

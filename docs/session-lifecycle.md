@@ -29,7 +29,7 @@
 
 ## Open Existing Branch
 
-1. User selects a root directory and toggles the dashboard branch mode to open existing. The branch field fuzzy-filters local branches and cached `origin/*` branches for that repository; manual entry remains available when a branch is not listed.
+1. User selects a root directory and toggles the dashboard branch mode to open existing. oak-tree fetches and prunes `origin`, then the branch field fuzzy-filters local and `origin/*` branches for that repository. If the fetch fails, cached branches remain selectable alongside the refresh error; manual entry remains available when a branch is not listed.
 2. oak-tree checks `git worktree list --porcelain` to see whether the branch is already checked out in another worktree.
 3. If it is checked out, oak-tree starts the tmux session in that worktree and records it as not owned by oak-tree.
 4. If it is not checked out, oak-tree checks whether the branch exists locally or on `origin`.
@@ -87,7 +87,7 @@ When `@juicesharp/rpiv-todo` is loaded, the same extension reads the latest pers
 
 ## Dashboard Session Table
 
-The dashboard is a full-width, dense session table optimized for session management. Each row shows agent state, project/session, branch, Git state, cached PR state, Pi todo progress on wide layouts, and usage where available. Todo progress uses completed/total counts with distinct in-progress, pending, and complete chips; `space` expands or collapses the selected session's task subjects inline. Summary counters highlight sessions needing attention, working, ready, waiting review, and blocked. Manually tagged review and blocked sessions are excluded from the active count and grouped in separate parked sections below active sessions. Their kanban cards show a compact age measured from the latest tag change; legacy records fall back to session creation time because their original tag time was not recorded. Sessions may also store a one-line note opened and edited with `e`; noted kanban cards show a highlighted `✎` icon instead of inline note text. The selected row is highlighted; `enter` attaches to the actual tmux workspace.
+The dashboard is a full-width, dense session table optimized for session management. Each row shows agent state, project/session, branch, Git state, cached PR state, Pi todo progress on wide layouts, and usage where available. Todo progress uses completed/total counts with distinct in-progress, pending, and complete chips; `space` expands or collapses the selected session's task subjects inline. Summary counters highlight sessions needing attention, working, ready, waiting review, and blocked. A manually tagged testing session remains active and appears in a full-width `TESTING NOW` strip above the kanban columns, including its live `QUESTION`, `WORKING`, or `READY` agent state. In kanban view, `tab` moves focus between that strip and the board; arrow keys stay within the focused area. Manually tagged review and blocked sessions are excluded from the active count and grouped in separate parked sections below active sessions. Their kanban cards show a compact age measured from the latest tag change; legacy records fall back to session creation time because their original tag time was not recorded. Sessions may also store a one-line note opened and edited with `e`; noted kanban cards show a highlighted `✎` icon instead of inline note text. The selected row is highlighted; `enter` attaches to the actual tmux workspace.
 
 The dashboard no longer renders a live agent-pane preview or polls tmux capture output. Agent pane capture remains available to lifecycle/status inference and service-level integrations, but it is not part of the dashboard rendering loop.
 
@@ -102,6 +102,8 @@ For automatic refresh:
 3. oak-tree calls `gh pr list` for that repository and branch.
 4. oak-tree summarizes review state and status checks, then uses a paginated GitHub GraphQL query to count unresolved review threads.
 5. oak-tree writes the result back to the session JSON. If the supplemental thread query fails, the other PR metadata is still cached and the unresolved-comment count is shown as unavailable until the next normal refresh.
+
+Kanban cards show a colored, text-labelled cached PR status before the PR number and other metadata, without needing selection: `MERGED`, `CLOSED`, `DRAFT`, `APPROVED`, `CHANGES` (changes requested), `REVIEW` (review required), or `OPEN` (review unknown). Lifecycle takes priority over approval. Status takes priority over secondary metadata in narrow columns, keeping the existing three-line card density. `APPROVED` describes review only, not CI or merge readiness; the inspector retains those details. These badges use the same cached metadata and refresh timing as the inspector.
 
 When the selected session has an actual cached PR, the dashboard renders a two-line inspector above the global key footer with its number, title, cache age, draft/ready state, CI, approval, and unresolved-comment status. The inspector contains the contextual `o` open and `p` refresh command hints and remains hidden when the selected session has no PR. `o` opens the cached PR URL with `gh pr view --web`; `p` force-refreshes its metadata.
 

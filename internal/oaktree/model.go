@@ -16,6 +16,7 @@ type SessionTag string
 
 const (
 	SessionTagNone          SessionTag = ""
+	SessionTagTesting       SessionTag = "manual_testing"
 	SessionTagWaitingReview SessionTag = "waiting_review"
 	SessionTagBlocked       SessionTag = "testing" // Keep the persisted value compatible with existing sessions.
 )

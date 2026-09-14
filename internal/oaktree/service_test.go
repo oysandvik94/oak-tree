@@ -44,18 +44,46 @@ func (r *stubRunner) Run(ctx context.Context, name string, args ...string) error
 	return nil
 }
 
-func TestExistingBranchesCombinesLocalAndOriginBranches(t *testing.T) {
-	runner := &stubRunner{outputFunc: func(name string, args []string) ([]byte, error) {
-		return []byte("main\nfeature/local\norigin/HEAD\norigin/main\norigin/feature/remote\n"), nil
-	}}
+func TestExistingBranchesFetchesAndCombinesLocalAndOriginBranches(t *testing.T) {
+	fetched := false
+	runner := &stubRunner{
+		runFunc: func(name string, args []string) error {
+			fetched = reflect.DeepEqual(append([]string{name}, args...), []string{"git", "-C", "/repo", "fetch", "--prune", "origin"})
+			return nil
+		},
+		outputFunc: func(name string, args []string) ([]byte, error) {
+			return []byte("main\nfeature/local\norigin/HEAD\norigin/main\norigin/feature/remote\n"), nil
+		},
+	}
 
 	got, err := ExistingBranches(context.Background(), runner, "/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !fetched {
+		t.Fatal("ExistingBranches() did not fetch and prune origin")
+	}
 	want := []string{"feature/local", "feature/remote", "main"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ExistingBranches() = %#v, want %#v", got, want)
+	}
+}
+
+func TestExistingBranchesReturnsCachedBranchesWhenFetchFails(t *testing.T) {
+	runner := &stubRunner{
+		runFunc: func(string, []string) error { return errors.New("offline") },
+		outputFunc: func(string, []string) ([]byte, error) {
+			return []byte("main\norigin/feature/cached\n"), nil
+		},
+	}
+
+	got, err := ExistingBranches(context.Background(), runner, "/repo")
+	if err == nil || !strings.Contains(err.Error(), "refresh branches") {
+		t.Fatalf("ExistingBranches() error = %v, want refresh failure", err)
+	}
+	want := []string{"feature/cached", "main"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ExistingBranches() = %#v, want cached branches %#v", got, want)
 	}
 }
 
