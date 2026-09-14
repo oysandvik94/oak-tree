@@ -95,6 +95,10 @@ func SessionFilePath(stateDir, id string) string {
 	return filepath.Join(stateDir, "sessions", id+".json")
 }
 
+func CampfireFilePath(stateDir string) string {
+	return filepath.Join(stateDir, "campfire.json")
+}
+
 func UsageCacheFilePath(stateDir string) string {
 	return filepath.Join(stateDir, "cache", "usage.json")
 }

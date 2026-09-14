@@ -160,7 +160,7 @@ If you close Pi and start another Pi process inside the same oak-tree tmux sessi
 
 Wide kanban layouts include a live `Campfire` rail beside the board. Managed Pi sessions receive a `campfire_update` tool with instructions to post short, factual updates after meaningful plans, discoveries, setbacks, recoveries, test results, phase changes, milestones, and handoffs. Delegating work to another agent or session—and receiving a notable delegated result—should produce an update naming the task and destination when safe. Only routine tool calls, tiny tasks, and recently repeated information stay silent. The dashboard combines updates from all visible sessions newest-first, with message kinds rendered as colored labels.
 
-Campfire messages are limited to 140 characters. Oak-tree rejects invalid kinds and terminal control characters, ignores duplicate or overly frequent routine updates, and keeps the latest 25 messages per session.
+Campfire messages are limited to 140 characters. Oak-tree rejects invalid kinds and terminal control characters, ignores duplicate or overly frequent routine updates, and keeps the latest 200 messages in a global archive. Closing a session does not remove its messages, and the rail wraps each displayed message in full. Legacy per-session messages remain visible alongside the archive until their session closes and archives them.
 
 ## Todo Status
 
@@ -204,6 +204,7 @@ Important subdirectories:
 
 ```text
 sessions/   session JSON files
+campfire.json  global Campfire archive
 worktrees/  oak-tree-created Git worktrees
 hooks/      local hook wrapper scripts
 cache/      local dashboard metadata caches
@@ -211,7 +212,7 @@ logs/       command debug logs
 ```
 
 Session JSON may include cached PR metadata under `pr`. That cache is updated by dashboard background refresh for missing or stale branch-backed sessions, and by explicit PR refresh.
-Session JSON may include a manual status under `tag`, such as `waiting_review` or the legacy-compatible `testing` value used for `BLOCKED`, a Pi todo summary under `todo`, and bounded Campfire activity under `campfire`.
+Session JSON may include a manual status under `tag`, such as `waiting_review` or the legacy-compatible `testing` value used for `BLOCKED`, and a Pi todo summary under `todo`. Legacy per-session `campfire` activity is archived globally when that session closes.
 Agent usage data is cached separately under `cache/usage.json`.
 
 User configuration is stored separately under:

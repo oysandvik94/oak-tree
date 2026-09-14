@@ -3,6 +3,7 @@ package oaktree
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -162,6 +163,77 @@ func TestStoreSerializesUpdatesAcrossInstances(t *testing.T) {
 	}
 }
 
+func TestStoreSerializesCampfireUpdatesAcrossInstances(t *testing.T) {
+	stateDir := t.TempDir()
+	first, second := NewStore(stateDir), NewStore(stateDir)
+	firstEntered := make(chan struct{})
+	secondStarted := make(chan struct{})
+	secondEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	errs := make(chan error, 2)
+	go func() {
+		errs <- first.UpdateCampfire(func(messages *[]CampfireMessage) error {
+			close(firstEntered)
+			<-releaseFirst
+			*messages = append(*messages, CampfireMessage{Message: "first"})
+			return nil
+		})
+	}()
+	<-firstEntered
+	go func() {
+		close(secondStarted)
+		errs <- second.UpdateCampfire(func(messages *[]CampfireMessage) error {
+			close(secondEntered)
+			*messages = append(*messages, CampfireMessage{Message: "second"})
+			return nil
+		})
+	}()
+
+	<-secondStarted
+	secondWasBlocked := false
+	select {
+	case <-secondEntered:
+	case <-time.After(50 * time.Millisecond):
+		secondWasBlocked = true
+	}
+	close(releaseFirst)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !secondWasBlocked {
+		t.Fatal("second Store entered UpdateCampfire before the first released its file lock")
+	}
+	messages, err := first.LoadCampfire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 2 || messages[0].Message != "first" || messages[1].Message != "second" {
+		t.Fatalf("concurrent Campfire updates lost data: %#v", messages)
+	}
+}
+
+func TestStoreCampfireRetainsLatestByTimestamp(t *testing.T) {
+	store := NewStore(t.TempDir())
+	base := time.Now().UTC().Add(-time.Hour)
+	if err := store.UpdateCampfire(func(messages *[]CampfireMessage) error {
+		for i := maxCampfireMessages; i >= 0; i-- {
+			*messages = append(*messages, CampfireMessage{At: base.Add(time.Duration(i) * time.Second), Message: fmt.Sprintf("message %d", i)})
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	messages, err := store.LoadCampfire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != maxCampfireMessages || messages[0].Message != "message 1" || messages[len(messages)-1].Message != fmt.Sprintf("message %d", maxCampfireMessages) {
+		t.Fatalf("global Campfire did not retain latest timestamps: first=%#v last=%#v len=%d", messages[0], messages[len(messages)-1], len(messages))
+	}
+}
+
 func TestStoreDeleteWaitsForConcurrentUpdate(t *testing.T) {
 	stateDir := t.TempDir()
 	updater, deleter := NewStore(stateDir), NewStore(stateDir)
@@ -203,6 +275,45 @@ func TestStoreDeleteWaitsForConcurrentUpdate(t *testing.T) {
 	}
 	if _, err := updater.LoadSession("deleting"); !os.IsNotExist(err) {
 		t.Fatalf("deleted session was resurrected: %v", err)
+	}
+}
+
+func TestStoreDeleteArchivesLegacyCampfire(t *testing.T) {
+	stateDir := t.TempDir()
+	store := NewStore(stateDir)
+	at := time.Now().UTC().Add(-time.Minute)
+	if err := store.SaveSession(Session{ID: "closing", Root: "/repo/api", Campfire: []CampfireMessage{{At: at, Kind: "plan", Message: "Legacy spark."}}, CreatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteSession("closing"); err != nil {
+		t.Fatal(err)
+	}
+	messages, err := store.LoadCampfire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 || messages[0].Message != "Legacy spark." || messages[0].SourceSessionID != "closing" || messages[0].Project != "api" {
+		t.Fatalf("archived Campfire = %#v", messages)
+	}
+	if _, err := store.LoadSession("closing"); !os.IsNotExist(err) {
+		t.Fatalf("session still exists after archive: %v", err)
+	}
+}
+
+func TestStoreDeleteIgnoresBrokenCampfireArchive(t *testing.T) {
+	stateDir := t.TempDir()
+	store := NewStore(stateDir)
+	if err := store.SaveSession(Session{ID: "closing", Campfire: []CampfireMessage{{At: time.Now().UTC(), Kind: "plan", Message: "Legacy spark."}}, CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(CampfireFilePath(stateDir), []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteSession("closing"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.LoadSession("closing"); !os.IsNotExist(err) {
+		t.Fatalf("broken Campfire archive blocked deletion: %v", err)
 	}
 }
 

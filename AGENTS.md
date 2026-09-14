@@ -19,7 +19,7 @@
 - Dashboard agent states are `QUESTION`, `WORKING`, and `READY`. Manually tagged `REVIEW` and `BLOCKED` sessions are excluded from the active count and grouped in separate parked sections below active sessions.
 - Pull request metadata is cached on session JSON. Dashboard startup may queue background refreshes for missing or stale branch-backed session PR caches; explicit `p` refresh still force-refreshes the selected session. An actual PR on the selected session gets a two-line inspector above the key footer with lifecycle, CI, approval, unresolved comments, and contextual open/refresh commands.
 - Pi todo summaries appear in the wide session table; `space` expands or collapses the selected session's persisted task subjects inline.
-- Managed Pi sessions receive a `campfire_update` tool for short, factual structured-banter updates. Wide kanban layouts merge their bounded per-session histories into a newest-first `Campfire` rail on the right.
+- Managed Pi sessions receive a `campfire_update` tool for short, factual structured-banter updates. Wide kanban layouts show a newest-first `Campfire` rail backed by a bounded global archive that survives session closure.
 
 ## Development Commands
 

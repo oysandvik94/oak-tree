@@ -195,9 +195,14 @@ func TestKanbanRendersGlobalCampfireRailNewestFirst(t *testing.T) {
 	model.width, model.height = 180, 26
 	model.kanbanView = true
 	now := time.Now().UTC()
+	legacySnag := CampfireMessage{At: now.Add(-time.Minute), Kind: "snag", Message: "Auth fixture is lying; trying a real token."}
 	model.sessions = []Session{
-		{ID: "api", Root: "/repo/accounting-api", AgentStatus: AgentStatusWorking, Campfire: []CampfireMessage{{At: now.Add(-time.Minute), Kind: "snag", Message: "Auth fixture is lying; trying a real token."}}},
-		{ID: "client", Root: "/repo/signing-client", AgentStatus: AgentStatusWorking, Campfire: []CampfireMessage{{At: now, Kind: "tests", Message: "Finally got the suite running — 47 tests pass."}}},
+		{ID: "api", Root: "/repo/accounting-api", AgentStatus: AgentStatusWorking, Campfire: []CampfireMessage{legacySnag}},
+		{ID: "client", Root: "/repo/signing-client", AgentStatus: AgentStatusWorking},
+	}
+	model.campfire = []CampfireMessage{
+		{At: legacySnag.At, Kind: legacySnag.Kind, Message: legacySnag.Message, SourceSessionID: "api", Project: "accounting-api"},
+		{At: now, Kind: "tests", Message: "Finally got the suite running — 47 tests pass.", SourceSessionID: "closed-client", Project: "signing-client"},
 	}
 
 	rendered := model.View().Content
@@ -209,22 +214,59 @@ func TestKanbanRendersGlobalCampfireRailNewestFirst(t *testing.T) {
 	if strings.Index(rendered, "Finally got") > strings.Index(rendered, "Auth fixture") {
 		t.Fatalf("Campfire messages not newest-first: %q", rendered)
 	}
+	if count := strings.Count(rendered, "Auth fixture"); count != 1 {
+		t.Fatalf("mixed global and legacy message rendered %d times, want once: %q", count, rendered)
+	}
 	if got := lipgloss.Height(rendered); got != model.height {
 		t.Fatalf("kanban with Campfire height = %d, want %d", got, model.height)
 	}
 }
 
-func TestCampfireRailMarksTruncatedMessagesWithoutOverflow(t *testing.T) {
+func TestCampfireRailRendersCompleteMessagesWithoutOverflow(t *testing.T) {
 	model := NewDashboardModel(&Service{}, Config{})
-	model.sessions = []Session{{Root: "/repo/火🔥verbose", Campfire: []CampfireMessage{{At: time.Now(), Kind: "aside", Message: strings.Repeat("長い🔥message ", 11)}}}}
-	rendered := model.renderCampfireRail(36, 12)
-	if !strings.Contains(rendered, "…") {
-		t.Fatalf("truncated Campfire message has no ellipsis: %q", rendered)
+	message := strings.Repeat("界", 132) + "finished"
+	model.campfire = []CampfireMessage{{At: time.Now(), Kind: "aside", Message: message, Project: "火🔥verbose"}}
+	rendered := model.renderCampfireRail(36, 14)
+	if !strings.Contains(rendered, "finished") {
+		t.Fatalf("Campfire message was cut off: %q", rendered)
 	}
 	for _, line := range strings.Split(rendered, "\n") {
 		if width := lipgloss.Width(line); width > 38 {
 			t.Fatalf("Campfire line width = %d, want <= 38: %q", width, line)
 		}
+	}
+	if height := lipgloss.Height(rendered); height != 16 {
+		t.Fatalf("Campfire height = %d, want 16", height)
+	}
+}
+
+func TestDashboardRefreshPreservesSessionsWhenCampfireIsBroken(t *testing.T) {
+	model := NewDashboardModel(&Service{}, Config{})
+	model.campfire = []CampfireMessage{{Message: "last good spark"}}
+	updated, _ := model.Update(dashboardMsg{sessions: []Session{{ID: "still-visible"}}, campfireErr: errors.New("invalid archive")})
+	got := updated.(DashboardModel)
+	if len(got.sessions) != 1 || got.sessions[0].ID != "still-visible" {
+		t.Fatalf("session refresh was discarded: %#v", got.sessions)
+	}
+	if len(got.campfire) != 1 || got.campfire[0].Message != "last good spark" {
+		t.Fatalf("last valid Campfire was discarded: %#v", got.campfire)
+	}
+	if got.err == nil || !strings.Contains(got.err.Error(), "load Campfire") {
+		t.Fatalf("Campfire error not surfaced: %v", got.err)
+	}
+	updated, _ = got.Update(agentStatusRefreshMsg{sessions: got.sessions, campfire: []CampfireMessage{{Message: "recovered"}}})
+	got = updated.(DashboardModel)
+	if got.err != nil || len(got.campfire) != 1 || got.campfire[0].Message != "recovered" {
+		t.Fatalf("successful Campfire refresh did not clear error: err=%v messages=%#v", got.err, got.campfire)
+	}
+}
+
+func TestCampfireRailExplainsViewportClipping(t *testing.T) {
+	model := NewDashboardModel(&Service{}, Config{})
+	model.campfire = []CampfireMessage{{At: time.Now(), Kind: "discovery", Message: strings.Repeat("界", 140), Project: "api"}}
+	rendered := model.renderCampfireRail(36, 6)
+	if !strings.Contains(rendered, "DISCOVERY") || !strings.Contains(rendered, "resize to read full message") {
+		t.Fatalf("small Campfire rail hid oversized newest message: %q", rendered)
 	}
 }
 
@@ -232,7 +274,8 @@ func TestCampfireRailStartsAt120TerminalColumns(t *testing.T) {
 	model := NewDashboardModel(&Service{}, Config{})
 	model.height = 20
 	model.kanbanView = true
-	model.sessions = []Session{{Root: "/repo/api", Campfire: []CampfireMessage{{At: time.Now(), Kind: "plan", Message: "Starting."}}}}
+	model.sessions = []Session{{Root: "/repo/api"}}
+	model.campfire = []CampfireMessage{{At: time.Now(), Kind: "plan", Message: "Starting.", Project: "api"}}
 	model.width = 119
 	if rendered := model.View().Content; strings.Contains(rendered, "Campfire") {
 		t.Fatalf("Campfire rendered below width threshold: %q", rendered)

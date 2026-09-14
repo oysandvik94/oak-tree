@@ -14,8 +14,9 @@ import (
 )
 
 type Store struct {
-	StateDir string
-	mu       sync.Mutex
+	StateDir   string
+	mu         sync.Mutex
+	campfireMu sync.Mutex
 }
 
 type DashboardPreferences struct {
@@ -142,7 +143,15 @@ func (s *Store) ListSessions() ([]Session, error) {
 func (s *Store) DeleteSession(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.withSessionLock(id, func() error { return os.Remove(SessionFilePath(s.StateDir, id)) })
+	return s.withSessionLock(id, func() error {
+		session, err := s.LoadSession(id)
+		if err != nil {
+			return err
+		}
+		// Campfire is auxiliary; a broken archive must not block session cleanup.
+		_ = s.archiveSessionCampfire(session)
+		return os.Remove(SessionFilePath(s.StateDir, id))
+	})
 }
 
 func (s *Store) UpdateSession(id string, fn func(*Session) error) error {
@@ -165,7 +174,10 @@ func (s *Store) withSessionLock(id string, fn func() error) error {
 	if err := s.ensureDirs(); err != nil {
 		return err
 	}
-	path := filepath.Join(s.StateDir, "sessions", "."+SafeComponent(id)+".lock")
+	return withFileLock(filepath.Join(s.StateDir, "sessions", "."+SafeComponent(id)+".lock"), fn)
+}
+
+func withFileLock(path string, fn func() error) error {
 	lock, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
@@ -179,6 +191,70 @@ func (s *Store) withSessionLock(id string, fn func() error) error {
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 	return fn()
+}
+
+func (s *Store) LoadCampfire() ([]CampfireMessage, error) {
+	data, err := readPrivateFile(CampfireFilePath(s.StateDir))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var messages []CampfireMessage
+	if err := json.Unmarshal(data, &messages); err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
+func (s *Store) UpdateCampfire(fn func(*[]CampfireMessage) error) error {
+	s.campfireMu.Lock()
+	defer s.campfireMu.Unlock()
+	if err := s.ensureDirs(); err != nil {
+		return err
+	}
+	return withFileLock(filepath.Join(s.StateDir, ".campfire.lock"), func() error {
+		messages, err := s.LoadCampfire()
+		if err != nil {
+			return err
+		}
+		if err := fn(&messages); err != nil {
+			return err
+		}
+		sort.SliceStable(messages, func(i, j int) bool { return messages[i].At.Before(messages[j].At) })
+		if len(messages) > maxCampfireMessages {
+			messages = messages[len(messages)-maxCampfireMessages:]
+		}
+		data, err := json.MarshalIndent(messages, "", "  ")
+		if err != nil {
+			return err
+		}
+		return atomicWrite(CampfireFilePath(s.StateDir), data, 0o600)
+	})
+}
+
+func (s *Store) archiveSessionCampfire(session Session) error {
+	if len(session.Campfire) == 0 {
+		return nil
+	}
+	return s.UpdateCampfire(func(messages *[]CampfireMessage) error {
+		for _, legacy := range session.Campfire {
+			legacy.SourceSessionID = session.ID
+			legacy.Project = sessionProjectName(session)
+			duplicate := false
+			for _, existing := range *messages {
+				if existing.SourceSessionID == legacy.SourceSessionID && existing.At.Equal(legacy.At) && existing.Kind == legacy.Kind && existing.Message == legacy.Message {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				*messages = append(*messages, legacy)
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) FindSessionByWorkdir(workdir string) (*Session, error) {

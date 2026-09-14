@@ -35,9 +35,11 @@ type TodoSummary struct {
 }
 
 type CampfireMessage struct {
-	At      time.Time `json:"at"`
-	Kind    string    `json:"kind"`
-	Message string    `json:"message"`
+	At              time.Time `json:"at"`
+	Kind            string    `json:"kind"`
+	Message         string    `json:"message"`
+	SourceSessionID string    `json:"source_session_id,omitempty"`
+	Project         string    `json:"project,omitempty"`
 }
 
 type Session struct {

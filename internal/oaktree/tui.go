@@ -20,8 +20,10 @@ import (
 )
 
 type dashboardMsg struct {
-	sessions []Session
-	err      error
+	sessions    []Session
+	campfire    []CampfireMessage
+	err         error
+	campfireErr error
 }
 
 type animationTickMsg struct{}
@@ -81,8 +83,10 @@ type usageRefreshMsg struct {
 type usageTickMsg struct{}
 
 type agentStatusRefreshMsg struct {
-	sessions []Session
-	err      error
+	sessions    []Session
+	campfire    []CampfireMessage
+	err         error
+	campfireErr error
 }
 
 type gitStatusTickMsg struct{}
@@ -543,6 +547,7 @@ func rootCandidateItems(candidates []rootCandidate) []list.Item {
 type DashboardModel struct {
 	svc                  *Service
 	sessions             []Session
+	campfire             []CampfireMessage
 	selected             int
 	help                 help.Model
 	usage                UsageCache
@@ -613,14 +618,22 @@ func (m DashboardModel) Init() tea.Cmd {
 func (m DashboardModel) agentStatusRefreshCmd() tea.Cmd {
 	return tea.Tick(agentStatusRefreshInterval, func(time.Time) tea.Msg {
 		sessions, err := m.svc.ListSessionsWithAgentStatus(context.Background())
-		return agentStatusRefreshMsg{sessions: sessions, err: err}
+		if err != nil {
+			return agentStatusRefreshMsg{err: err}
+		}
+		campfire, campfireErr := m.svc.Store.LoadCampfire()
+		return agentStatusRefreshMsg{sessions: sessions, campfire: campfire, campfireErr: campfireErr}
 	})
 }
 
 func (m DashboardModel) refreshCmd() tea.Cmd {
 	return func() tea.Msg {
 		sessions, err := m.svc.ListSessions(context.Background())
-		return dashboardMsg{sessions: sessions, err: err}
+		if err != nil {
+			return dashboardMsg{err: err}
+		}
+		campfire, campfireErr := m.svc.Store.LoadCampfire()
+		return dashboardMsg{sessions: sessions, campfire: campfire, campfireErr: campfireErr}
 	}
 }
 
@@ -1031,6 +1044,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
+		if msg.campfireErr == nil {
+			m.campfire = msg.campfire
+		} else {
+			m.err = fmt.Errorf("load Campfire: %w", msg.campfireErr)
+		}
 		m = m.withSessionsPreservingSelection(msg.sessions).syncStatusSeenAt()
 		if len(m.sessions) == 0 {
 			if m.status == "refreshing" {
@@ -1050,6 +1068,14 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.withAnimationCmd(cmds...)
 	case agentStatusRefreshMsg:
 		if msg.err == nil {
+			if msg.campfireErr == nil {
+				m.campfire = msg.campfire
+				if m.err != nil && strings.HasPrefix(m.err.Error(), "load Campfire:") {
+					m.err = nil
+				}
+			} else {
+				m.err = fmt.Errorf("load Campfire: %w", msg.campfireErr)
+			}
 			m = m.withSessionsPreservingVisibleOrder(m.preserveAgentSnapshotTransient(msg.sessions)).syncStatusSeenAt()
 		}
 		cmds := []tea.Cmd{m.agentStatusRefreshCmd()}
@@ -1819,17 +1845,30 @@ func (m DashboardModel) renderSessionsPanel(width, height int) string {
 }
 
 type campfireFeedItem struct {
-	session Session
+	project string
 	message CampfireMessage
 }
 
 func (m DashboardModel) renderCampfireRail(width, height int) string {
 	innerWidth := max(12, width-4)
 	panelStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("60")).Padding(0, 1).Width(width).Height(max(5, height))
-	items := make([]campfireFeedItem, 0)
+	items := make([]campfireFeedItem, 0, len(m.campfire))
+	seen := make(map[string]struct{}, len(m.campfire))
+	add := func(project string, message CampfireMessage) {
+		key := message.SourceSessionID + "\x00" + message.At.UTC().Format(time.RFC3339Nano) + "\x00" + message.Kind + "\x00" + message.Message
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		items = append(items, campfireFeedItem{project: project, message: message})
+	}
+	for _, message := range m.campfire {
+		add(message.Project, message)
+	}
 	for _, session := range m.sessions {
 		for _, message := range session.Campfire {
-			items = append(items, campfireFeedItem{session: session, message: message})
+			message.SourceSessionID = session.ID
+			add(sessionProjectName(session), message)
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].message.At.After(items[j].message.At) })
@@ -1847,20 +1886,28 @@ func (m DashboardModel) renderCampfireRail(width, height int) string {
 	for _, item := range items {
 		kind, color := campfireKindStyle(item.message.Kind)
 		age := formatRelativeAge(item.message.At, time.Now())
-		meta := renderTinyPill(kind, color) + " " + lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Bold(true).Render(ansi.Truncate(sessionProjectName(item.session), max(1, innerWidth-lipgloss.Width(kind)-lipgloss.Width(age)-5), "…"))
+		project := strings.TrimSpace(item.project)
+		if project == "" {
+			project = "session"
+		}
+		meta := renderTinyPill(kind, color) + " " + lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Bold(true).Render(ansi.Truncate(project, max(1, innerWidth-lipgloss.Width(kind)-lipgloss.Width(age)-5), "…"))
 		if age != "" {
 			meta += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render(age)
 		}
 		wrapped := strings.Split(clipgloss.Wrap(item.message.Message, innerWidth, "-_/"), "\n")
-		if len(wrapped) > 2 {
-			wrapped = wrapped[:2]
-			wrapped[1] = ansi.Truncate(wrapped[1], max(1, innerWidth-1), "") + "…"
-		}
 		needed := 1 + len(wrapped)
 		if len(lines) > 1 {
 			needed++
 		}
 		if needed > remaining {
+			if len(lines) == 1 && remaining >= 2 {
+				lines = append(lines, meta)
+				visible := min(len(wrapped), max(0, remaining-2))
+				for _, line := range wrapped[:visible] {
+					lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(line))
+				}
+				lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render("↕ resize to read full message"))
+			}
 			break
 		}
 		if len(lines) > 1 {

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	maxCampfireMessages = 25
+	maxCampfireMessages = 200
 	campfireMinInterval = 45 * time.Second
 )
 
@@ -122,19 +122,6 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 			stored.Todo = &summary
 			return nil
 		case "campfire":
-			if len(stored.Campfire) > 0 {
-				last := stored.Campfire[len(stored.Campfire)-1]
-				if last.Kind == event.ActivityKind && last.Message == event.ActivityMessage {
-					return nil
-				}
-				if now.Sub(last.At) < campfireMinInterval && !campfireRateLimitExempt(event.ActivityKind) {
-					return nil
-				}
-			}
-			stored.Campfire = append(stored.Campfire, CampfireMessage{At: now, Kind: event.ActivityKind, Message: event.ActivityMessage})
-			if len(stored.Campfire) > maxCampfireMessages {
-				stored.Campfire = stored.Campfire[len(stored.Campfire)-maxCampfireMessages:]
-			}
 			return nil
 		default:
 			return fmt.Errorf("unknown agent event %q", event.Event)
@@ -145,6 +132,9 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 	if err != nil {
 		return err
 	}
+	if event.Event == "campfire" {
+		return s.appendCampfire(*session, event.ActivityKind, event.ActivityMessage)
+	}
 	if shouldNotifyQuestion {
 		_ = s.Exec.Run(ctx, "notify-send", "Pi question waiting", agentQuestionNotificationBody(*session))
 	}
@@ -152,6 +142,27 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 		_ = s.Exec.Run(ctx, "notify-send", "Pi finished working", agentQuestionNotificationBody(*session))
 	}
 	return nil
+}
+
+func (s *Service) appendCampfire(session Session, kind, message string) error {
+	return s.Store.UpdateCampfire(func(messages *[]CampfireMessage) error {
+		now := time.Now().UTC()
+		for i := len(*messages) - 1; i >= 0; i-- {
+			last := (*messages)[i]
+			if last.SourceSessionID != session.ID {
+				continue
+			}
+			if last.Kind == kind && last.Message == message {
+				return nil
+			}
+			if now.Sub(last.At) < campfireMinInterval && !campfireRateLimitExempt(kind) {
+				return nil
+			}
+			break
+		}
+		*messages = append(*messages, CampfireMessage{At: now, Kind: kind, Message: message, SourceSessionID: session.ID, Project: sessionProjectName(session)})
+		return nil
+	})
 }
 
 func validateCampfireMessage(kind, message string) error {

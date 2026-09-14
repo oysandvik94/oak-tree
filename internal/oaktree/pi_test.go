@@ -216,11 +216,11 @@ func TestHandleAgentEventStoresTodoSummaryWithoutChangingAgentStatus(t *testing.
 	}
 }
 
-func TestHandleAgentEventStoresBoundedCampfireMessages(t *testing.T) {
+func TestHandleAgentEventStoresBoundedGlobalCampfireMessages(t *testing.T) {
 	state := t.TempDir()
 	store := NewStore(state)
 	updatedAt := time.Now().UTC().Add(-time.Minute)
-	if err := store.SaveSession(Session{ID: "oak-campfire", RightPaneID: "%2", AgentStatus: AgentStatusWorking, AgentStatusUpdatedAt: &updatedAt, CreatedAt: time.Now().UTC()}); err != nil {
+	if err := store.SaveSession(Session{ID: "oak-campfire", Root: "/repo/oak-tree", RightPaneID: "%2", AgentStatus: AgentStatusWorking, AgentStatusUpdatedAt: &updatedAt, CreatedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
 	}
 	svc := NewService(Paths{StateDir: state}, store, &stubRunner{})
@@ -237,19 +237,25 @@ func TestHandleAgentEventStoresBoundedCampfireMessages(t *testing.T) {
 	if err := post("snag", "Found a real blocker; changing course."); err != nil {
 		t.Fatal(err)
 	}
+	messages, err := store.LoadCampfire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 2 || messages[0].Message != "Tracing the event pipeline." || messages[1].Kind != "snag" || messages[0].SourceSessionID != "oak-campfire" || messages[0].Project != "oak-tree" {
+		t.Fatalf("Campfire = %#v", messages)
+	}
 	got, err := store.LoadSession("oak-campfire")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Campfire) != 2 || got.Campfire[0].Message != "Tracing the event pipeline." || got.Campfire[1].Kind != "snag" {
-		t.Fatalf("Campfire = %#v", got.Campfire)
-	}
-	if got.AgentStatus != AgentStatusWorking || got.AgentStatusUpdatedAt == nil || !got.AgentStatusUpdatedAt.Equal(updatedAt) {
-		t.Fatalf("Campfire event changed agent status: %#v", got)
+	if len(got.Campfire) != 0 || got.AgentStatus != AgentStatusWorking || got.AgentStatusUpdatedAt == nil || !got.AgentStatusUpdatedAt.Equal(updatedAt) {
+		t.Fatalf("global Campfire event changed session state: %#v", got)
 	}
 
-	if err := store.UpdateSession("oak-campfire", func(session *Session) error {
-		session.Campfire[len(session.Campfire)-1].At = time.Now().UTC().Add(-46 * time.Second)
+	if err := store.UpdateCampfire(func(messages *[]CampfireMessage) error {
+		for i := range *messages {
+			(*messages)[i].At = time.Now().UTC().Add(-46 * time.Second)
+		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -257,18 +263,18 @@ func TestHandleAgentEventStoresBoundedCampfireMessages(t *testing.T) {
 	if err := post("discovery", "Routine update after the shorter interval."); err != nil {
 		t.Fatal(err)
 	}
-	got, err = store.LoadSession("oak-campfire")
+	messages, err = store.LoadCampfire()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Campfire) != 3 || got.Campfire[2].Message != "Routine update after the shorter interval." {
-		t.Fatalf("Campfire update after 46 seconds was not stored: %#v", got.Campfire)
+	if len(messages) != 3 || messages[2].Message != "Routine update after the shorter interval." {
+		t.Fatalf("Campfire update after 46 seconds was not stored: %#v", messages)
 	}
 
-	if err := store.UpdateSession("oak-campfire", func(session *Session) error {
-		session.Campfire = make([]CampfireMessage, maxCampfireMessages)
-		for i := range session.Campfire {
-			session.Campfire[i] = CampfireMessage{At: time.Now().UTC(), Kind: "tests", Message: fmt.Sprintf("message %d", i)}
+	if err := store.UpdateCampfire(func(messages *[]CampfireMessage) error {
+		*messages = make([]CampfireMessage, maxCampfireMessages)
+		for i := range *messages {
+			(*messages)[i] = CampfireMessage{At: time.Now().UTC(), Kind: "tests", Message: fmt.Sprintf("message %d", i), SourceSessionID: "oak-campfire", Project: "oak-tree"}
 		}
 		return nil
 	}); err != nil {
@@ -277,12 +283,12 @@ func TestHandleAgentEventStoresBoundedCampfireMessages(t *testing.T) {
 	if err := post("milestone", "Backend complete; starting frontend."); err != nil {
 		t.Fatal(err)
 	}
-	got, err = store.LoadSession("oak-campfire")
+	messages, err = store.LoadCampfire()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Campfire) != maxCampfireMessages || got.Campfire[0].Message != "message 1" || got.Campfire[len(got.Campfire)-1].Message != "Backend complete; starting frontend." {
-		t.Fatalf("bounded Campfire = %#v", got.Campfire)
+	if len(messages) != maxCampfireMessages || messages[0].Message != "message 1" || messages[len(messages)-1].Message != "Backend complete; starting frontend." {
+		t.Fatalf("bounded Campfire = %#v", messages)
 	}
 
 	for _, event := range []AgentEvent{

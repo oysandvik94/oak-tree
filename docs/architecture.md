@@ -35,13 +35,13 @@ The extension sends events through:
 oak-tree hook agent-event
 ```
 
-It records Pi session identity, `session_start`, `agent_start`, `agent_settled`, `session_shutdown`, question state, optional `rpiv-todo` summaries, and agent-authored Campfire updates. After managed-session registration succeeds, the embedded extension registers `campfire_update` as an active Pi tool with low-noise prompt guidance, then forwards its typed message through the same event hook. The hook validates, deduplicates, rate-limits, and bounds each session's activity history. Pi question events are authoritative; prose-question detection remains a conservative fallback. Transitions to `question` and from `working` to `agent_settled` trigger best-effort `notify-send` desktop notifications.
+It records Pi session identity, `session_start`, `agent_start`, `agent_settled`, `session_shutdown`, question state, optional `rpiv-todo` summaries, and agent-authored Campfire updates. After managed-session registration succeeds, the embedded extension registers `campfire_update` as an active Pi tool with low-noise prompt guidance, then forwards its typed message through the same event hook. The hook validates, deduplicates, rate-limits per source session, and appends to a bounded global activity archive. Pi question events are authoritative; prose-question detection remains a conservative fallback. Transitions to `question` and from `working` to `agent_settled` trigger best-effort `notify-send` desktop notifications.
 
 ## State
 
-Session records contain tmux pane IDs, worktree ownership, generic Pi session IDs/files, agent status, optional todo summaries, up to 25 Campfire messages, Git status, and cached PR metadata. The kanban dashboard derives its global Campfire rail by merging and sorting those per-session lists; no separate feed store is required. Unknown fields in older session JSON are ignored when records are read and disappear after the next write.
+Session records contain tmux pane IDs, worktree ownership, generic Pi session IDs/files, agent status, optional todo summaries, Git status, and cached PR metadata. `campfire.json` retains the latest 200 Campfire messages independently of session lifetime; legacy per-session messages remain visible and are archived when their session closes. The kanban dashboard reads the archive and merges that compatibility data without duplicating messages. Unknown fields in older session JSON are ignored when records are read and disappear after the next write.
 
-Runtime state also includes `worktrees/`, `cache/usage.json`, `dashboard.json`, `logs/`, and the Pi extension directory. `dashboard.json` stores the last selected table or kanban view and each session's last-viewed status timestamp. State directories use owner-only permissions (`0700`) and state files use `0600`. No runtime state is stored in the repository.
+Runtime state also includes `worktrees/`, `campfire.json`, `cache/usage.json`, `dashboard.json`, `logs/`, and the Pi extension directory. `dashboard.json` stores the last selected table or kanban view and each session's last-viewed status timestamp. State directories use owner-only permissions (`0700`) and state files use `0600`. No runtime state is stored in the repository.
 
 ## Dashboard
 
