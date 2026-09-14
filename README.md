@@ -158,7 +158,7 @@ If you close Pi and start another Pi process inside the same oak-tree tmux sessi
 
 ## Campfire
 
-Wide kanban layouts include a live `Campfire` rail beside the board. Managed Pi sessions receive a `campfire_update` tool with instructions to post short, factual updates after meaningful plans, discoveries, setbacks, recoveries, test results, milestones, and handoffs—not routine tool calls or ordinary next steps. Milestones require a tangible completed result, and handoffs require an actual transfer of responsibility or context. The dashboard combines updates from all visible sessions newest-first, with message kinds rendered as colored labels.
+Wide kanban layouts include a live `Campfire` rail beside the board. Managed Pi sessions receive a `campfire_update` tool with instructions to post short, factual updates after meaningful plans, discoveries, setbacks, recoveries, test results, phase changes, milestones, and handoffs. Delegating work to another agent or session—and receiving a notable delegated result—should produce an update naming the task and destination when safe. Only routine tool calls, tiny tasks, and recently repeated information stay silent. The dashboard combines updates from all visible sessions newest-first, with message kinds rendered as colored labels.
 
 Campfire messages are limited to 140 characters. Oak-tree rejects invalid kinds and terminal control characters, ignores duplicate or overly frequent routine updates, and keeps the latest 25 messages per session.
 

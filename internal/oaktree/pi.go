@@ -133,8 +133,9 @@ export default function (pi) {
       promptSnippet: "Post meaningful progress updates to the oak-tree Campfire feed",
       promptGuidelines: [
         "Use campfire_update after a meaningful plan, discovery, setback, recovery, test result, milestone, or handoff.",
-        "Do not use campfire_update for routine reads, searches, commands, tiny tasks, ordinary next steps, or repeated information.",
-        "Use milestone only for a tangible completed result and handoff only when responsibility or context actually transfers; never use exempt kinds to bypass pacing.",
+        "Also post when starting a distinct phase, delegating work to another agent or session, or receiving a notable delegated result; prefer a useful update over silence.",
+        "Use handoff for delegation and name the task and destination when safe.",
+        "Skip only routine reads, searches, commands, tiny tasks, and information already posted recently.",
         "Keep campfire_update messages factual, conversational, and under 140 characters; include the next action when useful, and never invent progress.",
         "Never include secrets, private data, or raw stack traces in campfire_update messages.",
       ],

@@ -13,7 +13,7 @@ import (
 
 const (
 	maxCampfireMessages = 25
-	campfireMinInterval = 90 * time.Second
+	campfireMinInterval = 45 * time.Second
 )
 
 type AgentEvent struct {

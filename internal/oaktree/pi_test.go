@@ -21,7 +21,7 @@ func TestEnsurePiExtensionContainsLifecycleAndQuestionTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "registerCommand(\"oak-tree\"", "Usage: /oak-tree register", "managed: ctx.mode === \"tui\"", "!extra.managed", "tmux_pane", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()", "campfire_update", "activity_kind", "activity_message", "StringEnum", "meaningful plan", "ordinary next steps", "tangible completed result", "actually transfers", "never use exempt kinds", "never invent progress"} {
+	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "registerCommand(\"oak-tree\"", "Usage: /oak-tree register", "managed: ctx.mode === \"tui\"", "!extra.managed", "tmux_pane", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()", "campfire_update", "activity_kind", "activity_message", "StringEnum", "meaningful plan", "starting a distinct phase", "delegating work", "notable delegated result", "prefer a useful update over silence", "name the task and destination", "Skip only routine reads", "never invent progress"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("extension missing %q", want)
 		}
@@ -246,6 +246,23 @@ func TestHandleAgentEventStoresBoundedCampfireMessages(t *testing.T) {
 	}
 	if got.AgentStatus != AgentStatusWorking || got.AgentStatusUpdatedAt == nil || !got.AgentStatusUpdatedAt.Equal(updatedAt) {
 		t.Fatalf("Campfire event changed agent status: %#v", got)
+	}
+
+	if err := store.UpdateSession("oak-campfire", func(session *Session) error {
+		session.Campfire[len(session.Campfire)-1].At = time.Now().UTC().Add(-46 * time.Second)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := post("discovery", "Routine update after the shorter interval."); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.LoadSession("oak-campfire")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Campfire) != 3 || got.Campfire[2].Message != "Routine update after the shorter interval." {
+		t.Fatalf("Campfire update after 46 seconds was not stored: %#v", got.Campfire)
 	}
 
 	if err := store.UpdateSession("oak-campfire", func(session *Session) error {
