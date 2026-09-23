@@ -578,6 +578,7 @@ type DashboardModel struct {
 	motionTickerActive   bool
 	todoExpanded         bool
 	kanbanView           bool
+	campfireHidden       bool
 	kanbanBoardSessionID string
 	statusSeenAt         map[string]time.Time
 }
@@ -605,6 +606,7 @@ func NewDashboardModel(svc *Service, cfg Config) DashboardModel {
 	if svc != nil && svc.Store != nil {
 		if preferences, err := svc.Store.LoadDashboardPreferences(); err == nil {
 			model.kanbanView = preferences.KanbanView
+			model.campfireHidden = preferences.CampfireHidden
 			model.statusSeenAt = preferences.StatusSeenAt
 		}
 	}
@@ -780,6 +782,7 @@ func (m DashboardModel) withSessionsPreservingVisibleOrder(sessions []Session) D
 }
 
 func (m DashboardModel) withSessions(sessions []Session, preserveVisibleOrder bool) DashboardModel {
+	initialLoad := len(m.sessions) == 0
 	prevID := ""
 	if sel := m.currentSession(); sel != nil {
 		prevID = sel.ID
@@ -815,6 +818,14 @@ func (m DashboardModel) withSessions(sessions []Session, preserveVisibleOrder bo
 			if m.sessions[i].ID == prevID {
 				m.selected = i
 				return m
+			}
+		}
+	}
+	if initialLoad && m.kanbanView {
+		for i := range m.sessions {
+			if m.sessions[i].Tag != SessionTagTesting {
+				m.selected = i
+				break
 			}
 		}
 	}
@@ -869,7 +880,7 @@ func (m DashboardModel) syncStatusSeenAt() DashboardModel {
 		}
 	}
 	if changed && m.svc != nil && m.svc.Store != nil {
-		if err := m.svc.Store.SaveDashboardPreferences(DashboardPreferences{KanbanView: m.kanbanView, StatusSeenAt: m.statusSeenAt}); err != nil {
+		if err := m.svc.Store.SaveDashboardPreferences(DashboardPreferences{KanbanView: m.kanbanView, CampfireHidden: m.campfireHidden, StatusSeenAt: m.statusSeenAt}); err != nil {
 			m.err = err
 			m.status = "view state save failed"
 		}
@@ -1348,12 +1359,24 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.kanbanView = !m.kanbanView
 		m.todoExpanded = false
 		if m.svc != nil && m.svc.Store != nil {
-			if err := m.svc.Store.SaveDashboardPreferences(DashboardPreferences{KanbanView: m.kanbanView, StatusSeenAt: m.statusSeenAt}); err != nil {
+			if err := m.svc.Store.SaveDashboardPreferences(DashboardPreferences{KanbanView: m.kanbanView, CampfireHidden: m.campfireHidden, StatusSeenAt: m.statusSeenAt}); err != nil {
 				m.err = err
 				m.status = "view preference failed"
 			}
 		}
 		return m.withAnimationCmd()
+	case "c":
+		if m.kanbanView {
+			m.campfireHidden = !m.campfireHidden
+			if m.svc != nil && m.svc.Store != nil {
+				if err := m.svc.Store.SaveDashboardPreferences(DashboardPreferences{KanbanView: m.kanbanView, CampfireHidden: m.campfireHidden, StatusSeenAt: m.statusSeenAt}); err != nil {
+					m.err = err
+					m.status = "Campfire preference failed"
+				}
+			}
+			return m.withAnimationCmd()
+		}
+		return m, nil
 	case "space":
 		if !m.kanbanView {
 			if sel := m.currentSession(); sel != nil && sel.Todo != nil && len(sel.Todo.Tasks) > 0 {
@@ -1739,7 +1762,7 @@ func (m DashboardModel) renderHeader(width int) string {
 
 func (m DashboardModel) renderBody(width, height int) string {
 	if m.kanbanView {
-		if width >= 118 {
+		if width >= 118 && !m.campfireHidden {
 			railWidth := min(52, max(36, width/4))
 			return lipgloss.JoinHorizontal(lipgloss.Top, m.renderKanbanPanel(width-railWidth-3, height), " ", m.renderCampfireRail(railWidth, height))
 		}
@@ -2784,6 +2807,11 @@ func (m DashboardModel) footerBindings() []key.Binding {
 		}
 		bindings := []key.Binding{move}
 		if m.kanbanView {
+			campfireAction := "hide fire"
+			if m.campfireHidden {
+				campfireAction = "show fire"
+			}
+			bindings = append(bindings, key.NewBinding(key.WithKeys("c"), key.WithHelp("c", campfireAction)))
 			for _, session := range m.sessions {
 				if session.Tag == SessionTagTesting {
 					bindings = append(bindings, key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "area")))

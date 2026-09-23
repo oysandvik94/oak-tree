@@ -222,6 +222,31 @@ func TestKanbanRendersGlobalCampfireRailNewestFirst(t *testing.T) {
 	}
 }
 
+func TestKanbanCanHideCampfireRail(t *testing.T) {
+	store := NewStore(t.TempDir())
+	service := NewService(Paths{StateDir: store.StateDir}, store, &stubRunner{})
+	model := NewDashboardModel(service, Config{})
+	model.width, model.height = 180, 26
+	model.kanbanView = true
+	model.sessions = []Session{{Root: "/repo/api"}}
+	model.campfire = []CampfireMessage{{At: time.Now(), Kind: "plan", Message: "Starting.", Project: "api"}}
+
+	updated, _ := model.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Text: "c"}))
+	hidden := updated.(DashboardModel)
+	if rendered := hidden.View().Content; strings.Contains(rendered, "Campfire") || !strings.Contains(rendered, "show fire") {
+		t.Fatalf("Campfire was not hidden: %q", rendered)
+	}
+	if restored := NewDashboardModel(service, Config{}); !restored.campfireHidden {
+		t.Fatal("new dashboard did not restore hidden Campfire")
+	}
+
+	updated, _ = hidden.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Text: "c"}))
+	shown := updated.(DashboardModel)
+	if rendered := shown.View().Content; !strings.Contains(rendered, "Campfire") || !strings.Contains(rendered, "hide fire") {
+		t.Fatalf("Campfire was not restored: %q", rendered)
+	}
+}
+
 func TestCampfireRailRendersCompleteMessagesWithoutOverflow(t *testing.T) {
 	model := NewDashboardModel(&Service{}, Config{})
 	message := strings.Repeat("界", 132) + "finished"
@@ -311,6 +336,20 @@ func TestKanbanShowsTestingSessionInFocusStrip(t *testing.T) {
 	}
 	if got := lipgloss.Height(rendered); got != model.height {
 		t.Fatalf("kanban height = %d, want %d", got, model.height)
+	}
+}
+
+func TestKanbanInitiallySelectsBoardInsteadOfTestingStrip(t *testing.T) {
+	model := NewDashboardModel(&Service{}, Config{})
+	model.kanbanView = true
+
+	updated, _ := model.Update(dashboardMsg{sessions: []Session{
+		{ID: "testing", AgentStatus: AgentStatusWorking, Tag: SessionTagTesting},
+		{ID: "working", AgentStatus: AgentStatusWorking},
+	}})
+
+	if got := updated.(DashboardModel).currentSession().ID; got != "working" {
+		t.Fatalf("initial selection = %q, want board session", got)
 	}
 }
 

@@ -20,8 +20,9 @@ type Store struct {
 }
 
 type DashboardPreferences struct {
-	KanbanView   bool                 `json:"kanban_view"`
-	StatusSeenAt map[string]time.Time `json:"status_seen_at,omitempty"`
+	KanbanView     bool                 `json:"kanban_view"`
+	CampfireHidden bool                 `json:"campfire_hidden,omitempty"`
+	StatusSeenAt   map[string]time.Time `json:"status_seen_at,omitempty"`
 }
 
 func NewStore(stateDir string) *Store {
