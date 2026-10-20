@@ -48,8 +48,8 @@ Pi integration requires an installed `pi` binary and a durable `oak-tree` execut
 1. Install oak-tree.
 2. Create a session and confirm tmux opens Pi on the left at 60% width and `nvim` on the right at 40%.
 3. Run a prompt and confirm the dashboard changes to `working`, then `done` when Pi settles.
-4. Without `@juicesharp/rpiv-ask-user-question`, ask Pi to make a choice that requires user input. Confirm oak-tree's fallback `question` tool opens, the dashboard shows `question`, and answering or cancelling restores `working`.
-5. Install `@juicesharp/rpiv-ask-user-question`, start a new session, and confirm only `ask_user_question` is exposed and produces the same `question` → `working` transition.
+4. Without `@juicesharp/rpiv-ask-user-question` or `@eko24ive/pi-ask`, ask Pi to make a choice that requires user input. Confirm oak-tree's fallback `question` tool opens, the dashboard shows `question`, and answering or cancelling restores `working`.
+5. Install `@juicesharp/rpiv-ask-user-question`, start a new session, and confirm only `ask_user_question` is exposed and produces the same `question` → `working` transition. Repeat with `@eko24ive/pi-ask` and confirm only `ask_user` is exposed.
 6. Exercise `/new`, `/resume`, and `/fork`; confirm the current Pi session id/file is recorded on the same oak-tree session JSON.
 7. Exit Pi and confirm the dashboard changes to `idle`.
 

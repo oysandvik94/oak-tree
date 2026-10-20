@@ -152,7 +152,7 @@ Session rows show coding-agent turn status next to `tmux`:
 ? question
 ```
 
-`working` is set when Pi starts a turn. `ready` means no turn is running and the session is available for your next action. Pi consumes the `rpiv:ask-user:prompt` event from `@juicesharp/rpiv-ask-user-question`; when that tool is unavailable, oak-tree registers a simpler `question` fallback. Pi prose questions retain a conservative pane fallback. When a session first changes to `question`, oak-tree runs `notify-send` with a desktop notification.
+`working` is set when Pi starts a turn. `ready` means no turn is running and the session is available for your next action. Pi consumes the `rpiv:ask-user:prompt` event from `@juicesharp/rpiv-ask-user-question` and the `@eko24ive/pi-ask:started`/`completed` events from `@eko24ive/pi-ask`; when neither `ask_user_question` nor `ask_user` is available, oak-tree registers a simpler `question` fallback. Pi prose questions retain a conservative pane fallback. When a session first changes to `question`, oak-tree runs `notify-send` with a desktop notification.
 
 If you close Pi and start another Pi process inside the same oak-tree tmux session, run `/oak-tree register` in the replacement process. Oak-tree then tracks its lifecycle, usage, and pane in the existing dashboard row.
 
