@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -114,30 +115,47 @@ func CreateWorktree(ctx context.Context, runner Runner, paths Paths, root, branc
 	if err := ensurePrivateWorktreeParent(paths, worktreePath); err != nil {
 		return "", err
 	}
-	defaultBranch, err := DetermineDefaultBranch(ctx, runner, root)
+	remotes, err := runner.Output(ctx, "git", "-C", root, "remote")
 	if err != nil {
-		return "", fmt.Errorf("determine default branch: %w", err)
+		return "", fmt.Errorf("list remotes: %w", err)
 	}
-	if err := FetchBranch(ctx, runner, root, defaultBranch); err != nil {
-		return "", fmt.Errorf("fetch default branch %s: %w", defaultBranch, err)
+	hasOrigin := slices.Contains(strings.Fields(string(remotes)), "origin")
+	base := ""
+	if hasOrigin {
+		defaultBranch, err := DetermineDefaultBranch(ctx, runner, root)
+		if err != nil {
+			return "", fmt.Errorf("determine default branch: %w", err)
+		}
+		if err := FetchBranch(ctx, runner, root, defaultBranch); err != nil {
+			return "", fmt.Errorf("fetch default branch %s: %w", defaultBranch, err)
+		}
+		base = "origin/" + defaultBranch
 	}
 	args := []string{"-C", root, "worktree", "add"}
 	branchExists := BranchExists(ctx, runner, root, branch)
-	if !branchExists {
-		args = append(args, "-b", branch)
-	}
 	startPoint := branch
 	if !branchExists {
-		args = append(args, "--no-track")
-		startPoint = "origin/" + defaultBranch
+		if !hasOrigin {
+			base, err = CurrentBranch(ctx, runner, root)
+			if err != nil {
+				return "", fmt.Errorf("determine local branch: %w", err)
+			}
+			if base == "" {
+				return "", errors.New("select a local branch before creating a worktree without origin")
+			}
+		}
+		args = append(args, "-b", branch, "--no-track")
+		startPoint = base
 	}
 	args = append(args, worktreePath, startPoint)
 	if err := runner.Run(ctx, "git", args...); err != nil {
 		return "", fmt.Errorf("add worktree for branch %s: %w", branch, err)
 	}
-	if err := ConfigureBranchUpstream(ctx, runner, root, branch, "origin"); err != nil {
-		_ = RemoveWorktree(ctx, runner, root, worktreePath)
-		return "", fmt.Errorf("configure upstream for branch %s: %w", branch, err)
+	if hasOrigin {
+		if err := ConfigureBranchUpstream(ctx, runner, root, branch, "origin"); err != nil {
+			_ = RemoveWorktree(ctx, runner, root, worktreePath)
+			return "", fmt.Errorf("configure upstream for branch %s: %w", branch, err)
+		}
 	}
 	return worktreePath, nil
 }

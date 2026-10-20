@@ -15,8 +15,8 @@
 
 1. User selects or passes a root directory and branch name in create-new mode.
 2. oak-tree validates that the root is a git repository.
-3. oak-tree detects the default branch for `origin`.
-4. oak-tree runs a fetch for the latest default branch.
+3. If `origin` exists, oak-tree detects its default branch.
+4. If `origin` exists, oak-tree fetches the latest default branch. Remote errors stop creation, without falling back to local history.
 5. oak-tree creates a git worktree under:
 
    ```text
@@ -24,8 +24,8 @@
    ```
 
 6. oak-tree starts the same two-pane tmux layout in the worktree directory.
-7. For a new local branch, oak-tree creates it from `origin/<default-branch>` with `--no-track`.
-8. oak-tree configures the branch to push to `origin/<branch-name>` instead of tracking the default branch it was created from. This also repairs an existing local branch used through create-new mode if it still has the old default-branch upstream.
+7. For a new branch with `origin`, oak-tree starts from `origin/<default-branch>` with `--no-track`. Without `origin`, it starts from the current local branch. A detached HEAD requires selecting a local branch first. Existing branches retain their own history.
+8. With `origin`, oak-tree configures the branch to push to `origin/<branch-name>` instead of tracking the default branch it was created from. This also repairs an existing local branch used through create-new mode if it still has the old default-branch upstream. Without `origin`, oak-tree does not fetch or configure upstreams. Uncommitted source changes are not copied to the worktree.
 9. oak-tree records the worktree path as owned by the session.
 
 ## Open Existing Branch

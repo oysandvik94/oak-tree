@@ -175,6 +175,9 @@ func TestCreateSessionWrapsHighValueFailures(t *testing.T) {
 		store := NewStore(paths.StateDir)
 		runner := &stubRunner{
 			outputFunc: func(name string, args []string) ([]byte, error) {
+				if args[len(args)-1] == "remote" {
+					return []byte("origin\n"), nil
+				}
 				return nil, errors.New("exit status 1")
 			},
 		}
@@ -285,6 +288,8 @@ func TestCreateSessionNewBranchConfiguresSameNameUpstream(t *testing.T) {
 	runner := &recordingRunner{
 		outputFunc: func(name string, args []string) ([]byte, error) {
 			switch {
+			case name == "git" && args[len(args)-1] == "remote":
+				return []byte("origin\n"), nil
 			case name == "git" && argsContain(args, "symbolic-ref"):
 				return []byte("origin/develop\n"), nil
 			case name == "tmux" && len(args) > 0 && args[0] == "new-session":
@@ -344,6 +349,8 @@ func TestCreateSessionExistingCreateBranchRepairsSameNameUpstream(t *testing.T) 
 	runner := &recordingRunner{
 		outputFunc: func(name string, args []string) ([]byte, error) {
 			switch {
+			case name == "git" && args[len(args)-1] == "remote":
+				return []byte("origin\n"), nil
 			case name == "git" && argsContain(args, "symbolic-ref"):
 				return []byte("origin/develop\n"), nil
 			case name == "tmux" && len(args) > 0 && args[0] == "new-session":
