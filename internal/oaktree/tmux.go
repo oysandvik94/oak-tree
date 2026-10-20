@@ -48,6 +48,51 @@ func ListPanesArgs(target string) []string {
 	return []string{"list-panes", "-s", "-t", target, "-F", "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}"}
 }
 
+// Session user options published for tools that need to locate the panes of
+// an oak-tree session, such as editor/agent bridges.
+const (
+	TmuxOptionSessionID = "@oak_tree_session_id"
+	TmuxOptionNvimPane  = "@oak_nvim_pane"
+	TmuxOptionPiPane    = "@oak_pi_pane"
+)
+
+func SetSessionOptionArgs(target, option, value string) []string {
+	return []string{"set-option", "-t", target, option, value}
+}
+
+// OakSessionOptionsArgs builds one tmux invocation that sets every non-empty
+// oak-tree session option, chaining commands with tmux's ";" separator.
+func OakSessionOptionsArgs(target, oakSessionID, nvimPaneID, piPaneID string) []string {
+	var args []string
+	for _, option := range []struct{ name, value string }{
+		{TmuxOptionSessionID, oakSessionID},
+		{TmuxOptionNvimPane, nvimPaneID},
+		{TmuxOptionPiPane, piPaneID},
+	} {
+		if strings.TrimSpace(option.value) == "" {
+			continue
+		}
+		if len(args) > 0 {
+			args = append(args, ";")
+		}
+		args = append(args, SetSessionOptionArgs(target, option.name, option.value)...)
+	}
+	return args
+}
+
+// SetOakSessionOptions publishes the oak-tree session and pane IDs as tmux
+// session user options. It is a no-op when there is no target or nothing to set.
+func SetOakSessionOptions(ctx context.Context, runner Runner, target, oakSessionID, nvimPaneID, piPaneID string) error {
+	if strings.TrimSpace(target) == "" {
+		return nil
+	}
+	args := OakSessionOptionsArgs(target, oakSessionID, nvimPaneID, piPaneID)
+	if len(args) == 0 {
+		return nil
+	}
+	return runner.Run(ctx, "tmux", args...)
+}
+
 func KillSessionArgs(target string) []string {
 	return []string{"kill-session", "-t", target}
 }

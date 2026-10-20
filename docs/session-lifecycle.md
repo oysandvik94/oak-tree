@@ -9,6 +9,7 @@
 5. The left pane starts Pi with the state-owned extension at 60% width.
 6. The right pane runs `nvim` at 40% width.
 7. oak-tree records the session, pane ids, root, and active working directory.
+8. oak-tree publishes the session's pane ids as tmux session user options (see [tmux session options](#tmux-session-options)).
 
 ## Create With Branch
 
@@ -79,6 +80,18 @@ CLI creation does not require or consult `root_search_dirs` or `roots`.
 Oak-tree installs its state-owned extension into Pi's global extension directory and launches Pi with `OAK_TREE_SESSION_ID`. It also appends a managed-checkout instruction telling Pi to work in the branch and worktree oak-tree already selected, and not to create or switch branches or worktrees unless the user explicitly asks. The extension sends lifecycle events to `oak-tree hook agent-event`, including Pi's session id and session file. This keeps `/new`, `/resume`, and `/fork` linked to the same oak-tree session.
 
 If Pi is closed and restarted manually inside the same oak-tree tmux session, run `/oak-tree register`. The extension resolves the oak-tree session from the current tmux pane, replaces the recorded Pi pane, and starts reporting the replacement Pi session's lifecycle and usage identity. The command fails outside tmux or when the tmux session is not managed by oak-tree.
+
+## tmux session options
+
+Each managed tmux session carries these session-scoped user options so external tools, such as an editor/Pi bridge, can locate its panes without guessing from pane commands:
+
+| Option | Value |
+| --- | --- |
+| `@oak_tree_session_id` | oak-tree session ID |
+| `@oak_nvim_pane` | tmux pane ID running `nvim`, for example `%61` |
+| `@oak_pi_pane` | tmux pane ID running Pi, for example `%62` |
+
+Oak-tree sets them with `tmux set-option -t <tmux-session-id> ...` after creating the session, and sets them again when a Pi hook reports `session_start` or a Pi pane different from the recorded one. That also backfills sessions created before this behavior once Pi restarts or runs `/oak-tree register`. Other hook events do not run tmux. Setting the options is best effort: failures are recorded in command diagnostics and never fail session creation or hook handling. Read them with `tmux show-options -t <session> -v @oak_pi_pane`; a missing option means the session is not managed by oak-tree or the options have not been published yet, so consumers should fall back to pane discovery.
 
 The extension consumes `@juicesharp/rpiv-ask-user-question`'s `rpiv:ask-user:prompt` event and observes that tool's completion. When `ask_user_question` is unavailable, it registers a simpler `question` fallback. Answering or cancelling either UI restores `working`. `agent_settled` is represented as `attention` and sends a best-effort desktop notification; shutdown is `idle`. Only the top-level TUI runtime reports these events; embedded SDK sessions used by subagents run in print mode and are ignored. Ordinary prose prompts still use the pane heuristic as a fallback.
 

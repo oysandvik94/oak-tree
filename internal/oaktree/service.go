@@ -175,6 +175,9 @@ func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (
 		}
 		return Session{}, createSessionStepError(root, fmt.Sprintf("save session state for %s", sessionName), err)
 	}
+	// Best effort: the runner records failures in command diagnostics, and
+	// consumers fall back to pane discovery when the options are missing.
+	_ = SetOakSessionOptions(ctx, s.Exec, session.TmuxSessionID, session.ID, session.LeftPaneID, session.RightPaneID)
 	updated, err := s.Store.LoadSession(session.ID)
 	if err != nil {
 		return Session{}, err

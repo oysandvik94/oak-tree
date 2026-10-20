@@ -91,6 +91,11 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 	}
 	shouldNotifyQuestion := event.Event == "question" && session.AgentStatus != AgentStatusQuestion
 	shouldNotifySettled := event.Event == "agent_settled" && session.AgentStatus == AgentStatusWorking
+	piPaneID := session.RightPaneID
+	if event.TmuxPaneID != "" {
+		piPaneID = event.TmuxPaneID
+	}
+	shouldPublishPanes := event.Event == "session_start" || piPaneID != session.RightPaneID
 	now := time.Now().UTC()
 	err = s.Store.UpdateSession(session.ID, func(stored *Session) error {
 		if event.TmuxPaneID != "" {
@@ -131,6 +136,10 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 	})
 	if err != nil {
 		return err
+	}
+	if shouldPublishPanes {
+		// Best effort: the runner records failures in command diagnostics.
+		_ = SetOakSessionOptions(ctx, s.Exec, session.TmuxSessionID, session.ID, session.LeftPaneID, piPaneID)
 	}
 	if event.Event == "campfire" {
 		return s.appendCampfire(*session, event.ActivityKind, event.ActivityMessage)

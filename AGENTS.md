@@ -10,6 +10,7 @@
 - New sessions open one tmux window split into two vertical panes:
   - left (60%): Pi with the oak-tree extension
   - right (40%): `nvim`
+- Managed tmux sessions expose session user options `@oak_tree_session_id`, `@oak_nvim_pane`, and `@oak_pi_pane` (tmux pane IDs such as `%61`), set best effort on creation and refreshed when Pi reports `session_start` or a new pane.
 - New sessions accept a root directory and optional branch.
 - If a branch is supplied, oak-tree fetches the latest default branch and creates a git worktree under oak-tree state.
 - Closing a session kills the tmux session and removes oak-tree-owned worktrees, but keeps the local branch. If the dashboard popup is hosted by that session, the client first switches to a nearby remaining oak-tree session.
