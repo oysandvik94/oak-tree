@@ -296,6 +296,8 @@ func TestCreateSessionNewBranchConfiguresSameNameUpstream(t *testing.T) {
 				return []byte("%1\t%2\n"), nil
 			case name == "tmux" && len(args) > 0 && args[0] == "split-window":
 				return []byte("%3\n"), nil
+			case name == "tmux" && len(args) > 0 && args[0] == "new-window":
+				return []byte("%4\n"), nil
 			default:
 				t.Fatalf("unexpected Output call: %s %#v", name, args)
 				return nil, nil
@@ -357,6 +359,8 @@ func TestCreateSessionExistingCreateBranchRepairsSameNameUpstream(t *testing.T) 
 				return []byte("%1\t%2\n"), nil
 			case name == "tmux" && len(args) > 0 && args[0] == "split-window":
 				return []byte("%3\n"), nil
+			case name == "tmux" && len(args) > 0 && args[0] == "new-window":
+				return []byte("%4\n"), nil
 			default:
 				t.Fatalf("unexpected Output call: %s %#v", name, args)
 				return nil, nil
@@ -410,6 +414,8 @@ func TestCreateSessionOpenExistingUsesLocalBranchWorktree(t *testing.T) {
 				return []byte("%1\t%2\n"), nil
 			case name == "tmux" && len(args) > 0 && args[0] == "split-window":
 				return []byte("%3\n"), nil
+			case name == "tmux" && len(args) > 0 && args[0] == "new-window":
+				return []byte("%4\n"), nil
 			default:
 				t.Fatalf("unexpected Output call: %s %#v", name, args)
 				return nil, nil
@@ -478,6 +484,8 @@ func TestCreateSessionOpenExistingUsesRemoteOnlyBranchTrackingWorktree(t *testin
 				return []byte("%1\t%2\n"), nil
 			case name == "tmux" && len(args) > 0 && args[0] == "split-window":
 				return []byte("%3\n"), nil
+			case name == "tmux" && len(args) > 0 && args[0] == "new-window":
+				return []byte("%4\n"), nil
 			default:
 				t.Fatalf("unexpected Output call: %s %#v", name, args)
 				return nil, nil
@@ -587,6 +595,8 @@ func TestCreateSessionOpenExistingReusesCheckedOutWorktree(t *testing.T) {
 				return []byte("%1\t%2\n"), nil
 			case name == "tmux" && len(args) > 0 && args[0] == "split-window":
 				return []byte("%3\n"), nil
+			case name == "tmux" && len(args) > 0 && args[0] == "new-window":
+				return []byte("%4\n"), nil
 			default:
 				t.Fatalf("unexpected Output call: %s %#v", name, args)
 				return nil, nil

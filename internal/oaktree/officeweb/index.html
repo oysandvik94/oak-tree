@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>The office · oak-tree</title>
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/office.css">
+  <script type="module" src="/office.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">♧</span><div><span class="eyebrow">OAK-TREE</span><h1>The office<span class="title-dot">.</span></h1></div></div>
+    <div class="office-status"><span class="connection" id="connection" role="status">Connecting</span><span class="agent-total" id="agent-total">Waiting for agents</span></div>
+    <button class="quiet-button roster-toggle" id="roster-toggle" aria-controls="roster-panel" aria-expanded="false">Agents</button>
+  </header>
+  <main class="workspace">
+    <section class="stage-panel" aria-label="Interactive agent office">
+      <div class="scene-toolbar"><div class="scene-caption"><span class="eyebrow">THE STUDIO</span><span>Different rooms. One team.</span></div><div class="scene-actions"><button class="quiet-button" id="motion-toggle" aria-pressed="false">Pause motion</button><button class="quiet-button" id="fit-room">Fit office <kbd>F</kbd></button></div></div>
+      <nav id="room-navigation" class="room-navigation" aria-label="Focus a room">
+        <button class="quiet-button" data-room="all" aria-pressed="true">All rooms</button>
+        <button class="quiet-button" data-room="work" id="room-work" aria-pressed="false">Work room</button>
+        <button class="quiet-button" data-room="meeting" id="room-meeting" aria-pressed="false">Meeting room</button>
+        <button class="quiet-button" data-room="break" id="room-break" aria-pressed="false">Break room</button>
+      </nav>
+      <div id="stage" class="stage">
+        <canvas id="office" tabindex="0" aria-label="Agent office. Select an agent from the list, then use arrow keys to move it. Drag agents with the mouse. Shift-drag empty space to pan; scroll to zoom. Enter answers a selected agent's question."></canvas>
+        <div id="bubbles" class="bubbles"></div>
+        <div class="stage-message" id="stage-message" role="status">Opening the studio…</div>
+        <div class="connection-warning" id="connection-warning" role="alert" hidden></div>
+      </div>
+      <footer class="scene-footer"><span><span class="key-hint">Double-click</span> an agent to open its session <span class="divider">/</span> <span class="key-hint">Drag</span> an agent <span class="divider">/</span> <span class="key-hint">Scroll</span> to zoom <span class="divider">/</span> <span class="key-hint">Shift + drag</span> to pan</span><span id="interaction-status">Movement is just for fun.</span></footer>
+    </section>
+    <aside class="roster-panel" id="roster-panel" aria-label="Agents and activity">
+      <div class="roster-heading"><h2>Who's here</h2><span class="roster-count" id="roster-count">0</span></div>
+      <div class="state-counts" id="state-counts" aria-label="Agent status counts"></div>
+      <div id="agent-list" class="agent-list" aria-label="Select an agent"></div>
+      <section class="inspector" id="inspector" aria-label="Selected agent" hidden>
+        <span class="eyebrow">AT A GLANCE</span>
+        <h2 id="selected-project"></h2>
+        <div class="selected-meta"><span id="selected-role"></span><span class="state-label" id="selected-status"></span></div>
+        <p class="branch" id="selected-branch"></p>
+        <p class="selected-group" id="selected-group" hidden></p>
+        <div class="activity-card"><span class="eyebrow" id="activity-source">CURRENT ACTIVITY</span><p id="selected-activity"></p></div>
+        <div id="question-launcher" class="question-launcher" hidden></div>
+        <p class="inspector-help">Arrow keys move this character. Real agent work continues unchanged.</p>
+      </section>
+      <div class="roster-footer"><span class="local-dot"></span> Local view. No extra AI calls.</div>
+    </aside>
+  </main>
+  <dialog id="question-dialog" class="question-dialog" aria-labelledby="question-title" aria-describedby="question-policy">
+    <form id="question-form">
+      <header class="question-header"><div><span class="eyebrow" id="question-agent"></span><h2 id="question-title">Your answer is needed</h2></div><button type="button" class="quiet-button" id="question-close" aria-label="Close question">Close</button></header>
+      <div class="question-scroll">
+        <p class="answer-hint" id="question-policy">Sending replaces any unfinished answers in Pi. The first completed response wins; closing this window does not cancel the question.</p>
+        <nav id="question-picker" class="question-picker" aria-label="Pending questions" hidden></nav>
+        <fieldset id="question-fields" class="question-fields"></fieldset>
+        <p class="answer-hint" id="question-source"></p>
+      </div>
+      <footer class="question-footer">
+        <p id="question-feedback" role="status" aria-live="polite"></p>
+        <div class="question-buttons"><button type="button" class="quiet-button" id="question-cancel">Cancel question in Pi</button><button type="submit" class="answer-button" id="question-submit">Send answer</button></div>
+      </footer>
+    </form>
+  </dialog>
+</body>
+</html>

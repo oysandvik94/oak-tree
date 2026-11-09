@@ -1,0 +1,1015 @@
+{
+  "width": 864,
+  "height": 448,
+  "origin": [
+    394,
+    100
+  ],
+  "tile": [
+    20,
+    10
+  ],
+  "bounds": [
+    0.5,
+    0.5,
+    21.5,
+    17.5
+  ],
+  "background": "room.png",
+  "furniture": [
+    {
+      "src": "coffee.png",
+      "x": 653,
+      "y": 217,
+      "depth": 15.4
+    },
+    {
+      "src": "plant-back.png",
+      "x": 568,
+      "y": 171,
+      "depth": 11.2
+    },
+    {
+      "src": "plant-left.png",
+      "x": 57,
+      "y": 239,
+      "depth": 18.0
+    },
+    {
+      "src": "plant-front.png",
+      "x": 278,
+      "y": 314,
+      "depth": 25.4
+    },
+    {
+      "src": "plant-meeting.png",
+      "x": 658,
+      "y": 344,
+      "depth": 28.4
+    },
+    {
+      "src": "sofa.png",
+      "x": 603,
+      "y": 258,
+      "depth": 18.6
+    },
+    {
+      "src": "sofa-two.png",
+      "x": 667,
+      "y": 290,
+      "depth": 21.7
+    },
+    {
+      "src": "tea-table.png",
+      "x": 596,
+      "y": 301,
+      "depth": 22.0
+    },
+    {
+      "src": "partition-0-0.png",
+      "x": 212,
+      "y": 175,
+      "depth": 9.23
+    },
+    {
+      "src": "partition-0-1.png",
+      "x": 221,
+      "y": 180,
+      "depth": 9.69
+    },
+    {
+      "src": "partition-0-2.png",
+      "x": 230,
+      "y": 184,
+      "depth": 10.15
+    },
+    {
+      "src": "partition-0-3.png",
+      "x": 240,
+      "y": 189,
+      "depth": 10.610000000000001
+    },
+    {
+      "src": "partition-0-4.png",
+      "x": 249,
+      "y": 193,
+      "depth": 11.07
+    },
+    {
+      "src": "partition-0-5.png",
+      "x": 258,
+      "y": 198,
+      "depth": 11.53
+    },
+    {
+      "src": "partition-0-6.png",
+      "x": 267,
+      "y": 203,
+      "depth": 11.99
+    },
+    {
+      "src": "partition-0-7.png",
+      "x": 276,
+      "y": 207,
+      "depth": 12.450000000000001
+    },
+    {
+      "src": "partition-0-8.png",
+      "x": 286,
+      "y": 212,
+      "depth": 12.91
+    },
+    {
+      "src": "partition-0-9.png",
+      "x": 295,
+      "y": 216,
+      "depth": 13.37
+    },
+    {
+      "src": "partition-1-0.png",
+      "x": 340,
+      "y": 239,
+      "depth": 15.63
+    },
+    {
+      "src": "partition-1-1.png",
+      "x": 349,
+      "y": 244,
+      "depth": 16.09
+    },
+    {
+      "src": "partition-1-2.png",
+      "x": 358,
+      "y": 248,
+      "depth": 16.549999999999997
+    },
+    {
+      "src": "partition-1-3.png",
+      "x": 368,
+      "y": 253,
+      "depth": 17.009999999999998
+    },
+    {
+      "src": "partition-1-4.png",
+      "x": 377,
+      "y": 257,
+      "depth": 17.47
+    },
+    {
+      "src": "partition-1-5.png",
+      "x": 386,
+      "y": 262,
+      "depth": 17.93
+    },
+    {
+      "src": "partition-1-6.png",
+      "x": 395,
+      "y": 267,
+      "depth": 18.39
+    },
+    {
+      "src": "partition-1-7.png",
+      "x": 404,
+      "y": 271,
+      "depth": 18.85
+    },
+    {
+      "src": "partition-1-8.png",
+      "x": 414,
+      "y": 276,
+      "depth": 19.31
+    },
+    {
+      "src": "partition-1-9.png",
+      "x": 423,
+      "y": 280,
+      "depth": 19.769999999999996
+    },
+    {
+      "src": "partition-2-0.png",
+      "x": 602,
+      "y": 195,
+      "depth": 11.244444444444445
+    },
+    {
+      "src": "partition-2-1.png",
+      "x": 592,
+      "y": 200,
+      "depth": 11.733333333333334
+    },
+    {
+      "src": "partition-2-2.png",
+      "x": 583,
+      "y": 205,
+      "depth": 12.222222222222223
+    },
+    {
+      "src": "partition-2-3.png",
+      "x": 573,
+      "y": 210,
+      "depth": 12.711111111111112
+    },
+    {
+      "src": "partition-2-4.png",
+      "x": 563,
+      "y": 215,
+      "depth": 13.200000000000001
+    },
+    {
+      "src": "partition-2-5.png",
+      "x": 553,
+      "y": 219,
+      "depth": 13.68888888888889
+    },
+    {
+      "src": "partition-2-6.png",
+      "x": 544,
+      "y": 224,
+      "depth": 14.177777777777779
+    },
+    {
+      "src": "partition-2-7.png",
+      "x": 534,
+      "y": 229,
+      "depth": 14.666666666666668
+    },
+    {
+      "src": "partition-2-8.png",
+      "x": 524,
+      "y": 234,
+      "depth": 15.155555555555557
+    },
+    {
+      "src": "partition-3-0.png",
+      "x": 479,
+      "y": 257,
+      "depth": 17.425
+    },
+    {
+      "src": "partition-3-1.png",
+      "x": 470,
+      "y": 262,
+      "depth": 17.875
+    },
+    {
+      "src": "partition-3-2.png",
+      "x": 461,
+      "y": 266,
+      "depth": 18.325
+    },
+    {
+      "src": "partition-3-3.png",
+      "x": 452,
+      "y": 270,
+      "depth": 18.775000000000002
+    },
+    {
+      "src": "partition-3-4.png",
+      "x": 443,
+      "y": 275,
+      "depth": 19.224999999999998
+    },
+    {
+      "src": "partition-3-5.png",
+      "x": 434,
+      "y": 280,
+      "depth": 19.675
+    },
+    {
+      "src": "desk-0.png",
+      "x": 178,
+      "y": 201,
+      "depth": 14.400000000000002
+    },
+    {
+      "src": "chair-0-0.png",
+      "x": 171,
+      "y": 237,
+      "depth": 15.45
+    },
+    {
+      "src": "chair-0-1.png",
+      "x": 201,
+      "y": 252,
+      "depth": 16.93
+    },
+    {
+      "src": "desk-1.png",
+      "x": 248,
+      "y": 250,
+      "depth": 19.3
+    },
+    {
+      "src": "chair-1-0.png",
+      "x": 241,
+      "y": 286,
+      "depth": 20.349999999999998
+    },
+    {
+      "src": "chair-1-1.png",
+      "x": 271,
+      "y": 300,
+      "depth": 21.83
+    },
+    {
+      "src": "desk-2.png",
+      "x": 160,
+      "y": 270,
+      "depth": 21.3
+    },
+    {
+      "src": "chair-2-0.png",
+      "x": 153,
+      "y": 306,
+      "depth": 22.349999999999998
+    },
+    {
+      "src": "chair-2-1.png",
+      "x": 183,
+      "y": 320,
+      "depth": 23.83
+    },
+    {
+      "src": "meeting-leg-0.png",
+      "x": 382,
+      "y": 150,
+      "depth": 6.699999999999999
+    },
+    {
+      "src": "meeting-leg-1.png",
+      "x": 462,
+      "y": 190,
+      "depth": 10.7
+    },
+    {
+      "src": "meeting-leg-2.png",
+      "x": 357,
+      "y": 162,
+      "depth": 7.949999999999999
+    },
+    {
+      "src": "meeting-leg-3.png",
+      "x": 437,
+      "y": 202,
+      "depth": 11.95
+    },
+    {
+      "src": "meeting-top-0.png",
+      "x": 353,
+      "y": 145,
+      "depth": 8.05
+    },
+    {
+      "src": "meeting-top-1.png",
+      "x": 368,
+      "y": 152,
+      "depth": 8.8
+    },
+    {
+      "src": "meeting-top-2.png",
+      "x": 383,
+      "y": 160,
+      "depth": 9.55
+    },
+    {
+      "src": "meeting-top-3.png",
+      "x": 398,
+      "y": 168,
+      "depth": 10.3
+    },
+    {
+      "src": "meeting-top-4.png",
+      "x": 413,
+      "y": 175,
+      "depth": 11.05
+    },
+    {
+      "src": "meeting-top-5.png",
+      "x": 428,
+      "y": 182,
+      "depth": 11.8
+    },
+    {
+      "src": "meeting-chair-0-False.png",
+      "x": 399,
+      "y": 152,
+      "depth": 6.65
+    },
+    {
+      "src": "meeting-chair-0-True.png",
+      "x": 344,
+      "y": 175,
+      "depth": 9.35
+    },
+    {
+      "src": "meeting-chair-1-False.png",
+      "x": 430,
+      "y": 168,
+      "depth": 8.2
+    },
+    {
+      "src": "meeting-chair-1-True.png",
+      "x": 375,
+      "y": 191,
+      "depth": 10.9
+    },
+    {
+      "src": "meeting-chair-2-False.png",
+      "x": 461,
+      "y": 183,
+      "depth": 9.75
+    },
+    {
+      "src": "meeting-chair-2-True.png",
+      "x": 406,
+      "y": 206,
+      "depth": 12.45
+    }
+  ],
+  "obstacles": [
+    {
+      "u": 0.14,
+      "v": 3.15,
+      "w": 0.38,
+      "d": 1.75
+    },
+    {
+      "u": 0.14,
+      "v": 12.15,
+      "w": 0.38,
+      "d": 1.75
+    },
+    {
+      "u": 0.14,
+      "v": 16.0,
+      "w": 0.38,
+      "d": 1.75
+    },
+    {
+      "u": 1.0,
+      "v": 0.12,
+      "w": 1.75,
+      "d": 0.38
+    },
+    {
+      "u": 8.1,
+      "v": 0.12,
+      "w": 1.75,
+      "d": 0.38
+    },
+    {
+      "u": 19.6,
+      "v": 0.12,
+      "w": 1.75,
+      "d": 0.38
+    },
+    {
+      "u": 14.0,
+      "v": 0.35,
+      "w": 1.45,
+      "d": 0.7
+    },
+    {
+      "u": 9.8,
+      "v": 0.6,
+      "w": 0.6,
+      "d": 0.6
+    },
+    {
+      "u": 0.45,
+      "v": 16.8,
+      "w": 0.6,
+      "d": 0.6
+    },
+    {
+      "u": 9.7,
+      "v": 15.0,
+      "w": 0.6,
+      "d": 0.6
+    },
+    {
+      "u": 20.7,
+      "v": 7.0,
+      "w": 0.6,
+      "d": 0.6
+    },
+    {
+      "u": 14.4,
+      "v": 3.2,
+      "w": 1.9,
+      "d": 0.75
+    },
+    {
+      "u": 17.6,
+      "v": 3.2,
+      "w": 1.9,
+      "d": 0.75
+    },
+    {
+      "u": 16.0,
+      "v": 5.0,
+      "w": 1.8,
+      "d": 0.9
+    },
+    {
+      "u": 0,
+      "v": 8.9,
+      "w": 4.6,
+      "d": 0.2
+    },
+    {
+      "u": 6.4,
+      "v": 8.9,
+      "w": 4.6,
+      "d": 0.2
+    },
+    {
+      "u": 10.9,
+      "v": 0,
+      "w": 0.2,
+      "d": 4.4
+    },
+    {
+      "u": 10.9,
+      "v": 6.2,
+      "w": 0.2,
+      "d": 2.7
+    },
+    {
+      "u": 1.8,
+      "v": 11.3,
+      "w": 2.8,
+      "d": 1.25
+    },
+    {
+      "u": 6.0,
+      "v": 12.0,
+      "w": 2.8,
+      "d": 1.25
+    },
+    {
+      "u": 4.8,
+      "v": 15.2,
+      "w": 2.8,
+      "d": 1.25
+    },
+    {
+      "u": 3.0,
+      "v": 3.4,
+      "w": 4.5,
+      "d": 1.65
+    }
+  ],
+  "walls": [
+    [
+      0,
+      0,
+      0,
+      18
+    ],
+    [
+      0,
+      0,
+      22,
+      0
+    ],
+    [
+      0,
+      9.0,
+      4.6,
+      9.0
+    ],
+    [
+      6.4,
+      9.0,
+      11.0,
+      9.0
+    ],
+    [
+      11.0,
+      0,
+      11.0,
+      4.4
+    ],
+    [
+      11.0,
+      6.2,
+      11.0,
+      8.9
+    ]
+  ],
+  "rooms": [
+    {
+      "id": "work",
+      "name": "Work room",
+      "bounds": [
+        0,
+        9,
+        11,
+        18
+      ],
+      "spots": [
+        {
+          "u": 2.45,
+          "v": 12.950000000000001,
+          "seated": true,
+          "facing": "back"
+        },
+        {
+          "u": 3.9299999999999997,
+          "v": 12.950000000000001,
+          "seated": true,
+          "facing": "back"
+        },
+        {
+          "u": 6.65,
+          "v": 13.65,
+          "seated": true,
+          "facing": "back"
+        },
+        {
+          "u": 8.129999999999999,
+          "v": 13.65,
+          "seated": true,
+          "facing": "back"
+        },
+        {
+          "u": 5.45,
+          "v": 16.849999999999998,
+          "seated": true,
+          "facing": "back"
+        },
+        {
+          "u": 6.93,
+          "v": 16.849999999999998,
+          "seated": true,
+          "facing": "back"
+        }
+      ],
+      "view": [
+        18,
+        114,
+        432,
+        294
+      ]
+    },
+    {
+      "id": "meeting",
+      "name": "Meeting room",
+      "bounds": [
+        0,
+        0,
+        11,
+        9
+      ],
+      "spots": [
+        {
+          "u": 3.7,
+          "v": 2.85,
+          "facing": "front",
+          "seated": true
+        },
+        {
+          "u": 3.7,
+          "v": 5.55,
+          "facing": "back",
+          "seated": true
+        },
+        {
+          "u": 5.25,
+          "v": 2.85,
+          "facing": "front",
+          "seated": true
+        },
+        {
+          "u": 5.25,
+          "v": 5.55,
+          "facing": "back",
+          "seated": true
+        },
+        {
+          "u": 6.8,
+          "v": 2.85,
+          "facing": "front",
+          "seated": true
+        },
+        {
+          "u": 6.8,
+          "v": 5.55,
+          "facing": "back",
+          "seated": true
+        }
+      ],
+      "view": [
+        198,
+        24,
+        432,
+        294
+      ]
+    },
+    {
+      "id": "break",
+      "name": "Break room",
+      "bounds": [
+        11,
+        0,
+        22,
+        9
+      ],
+      "spots": [
+        {
+          "u": 15,
+          "v": 4.6
+        },
+        {
+          "u": 18.5,
+          "v": 4.6
+        },
+        {
+          "u": 14.2,
+          "v": 6.5
+        },
+        {
+          "u": 18.5,
+          "v": 6.5
+        },
+        {
+          "u": 13.2,
+          "v": 2.1
+        },
+        {
+          "u": 17.4,
+          "v": 1.8
+        },
+        {
+          "u": 19.7,
+          "v": 7.3
+        },
+        {
+          "u": 12.5,
+          "v": 7.0
+        }
+      ],
+      "view": [
+        418,
+        134,
+        432,
+        294
+      ]
+    }
+  ],
+  "sprites": [
+    {
+      "front-idle": {
+        "src": "person-0-front-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk0": {
+        "src": "person-0-front-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk1": {
+        "src": "person-0-front-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "front-seated": {
+        "src": "person-0-front-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      },
+      "back-idle": {
+        "src": "person-0-back-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk0": {
+        "src": "person-0-back-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk1": {
+        "src": "person-0-back-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "back-seated": {
+        "src": "person-0-back-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      }
+    },
+    {
+      "front-idle": {
+        "src": "person-1-front-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk0": {
+        "src": "person-1-front-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk1": {
+        "src": "person-1-front-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "front-seated": {
+        "src": "person-1-front-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      },
+      "back-idle": {
+        "src": "person-1-back-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk0": {
+        "src": "person-1-back-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk1": {
+        "src": "person-1-back-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "back-seated": {
+        "src": "person-1-back-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      }
+    },
+    {
+      "front-idle": {
+        "src": "person-2-front-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk0": {
+        "src": "person-2-front-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk1": {
+        "src": "person-2-front-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "front-seated": {
+        "src": "person-2-front-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      },
+      "back-idle": {
+        "src": "person-2-back-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk0": {
+        "src": "person-2-back-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk1": {
+        "src": "person-2-back-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "back-seated": {
+        "src": "person-2-back-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      }
+    },
+    {
+      "front-idle": {
+        "src": "person-3-front-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk0": {
+        "src": "person-3-front-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk1": {
+        "src": "person-3-front-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "front-seated": {
+        "src": "person-3-front-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      },
+      "back-idle": {
+        "src": "person-3-back-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk0": {
+        "src": "person-3-back-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk1": {
+        "src": "person-3-back-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "back-seated": {
+        "src": "person-3-back-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      }
+    },
+    {
+      "front-idle": {
+        "src": "person-4-front-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk0": {
+        "src": "person-4-front-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk1": {
+        "src": "person-4-front-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "front-seated": {
+        "src": "person-4-front-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      },
+      "back-idle": {
+        "src": "person-4-back-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk0": {
+        "src": "person-4-back-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk1": {
+        "src": "person-4-back-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "back-seated": {
+        "src": "person-4-back-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      }
+    },
+    {
+      "front-idle": {
+        "src": "person-5-front-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk0": {
+        "src": "person-5-front-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "front-walk1": {
+        "src": "person-5-front-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "front-seated": {
+        "src": "person-5-front-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      },
+      "back-idle": {
+        "src": "person-5-back-idle.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk0": {
+        "src": "person-5-back-walk0.png",
+        "anchorX": 7,
+        "anchorY": 23
+      },
+      "back-walk1": {
+        "src": "person-5-back-walk1.png",
+        "anchorX": 7,
+        "anchorY": 24
+      },
+      "back-seated": {
+        "src": "person-5-back-seated.png",
+        "anchorX": 5,
+        "anchorY": 25
+      }
+    }
+  ]
+}

@@ -6,9 +6,9 @@
 2. oak-tree validates that the directory exists.
 3. oak-tree uses the root directory as the active working directory.
 4. oak-tree creates a tmux session, reads back the initial pane id from `tmux new-session`, and splits that pane into two vertical panes.
-5. The left pane starts Pi with the state-owned extension at 60% width.
-6. The right pane runs `nvim` at 40% width.
-7. oak-tree records the session, pane ids, root, and active working directory.
+5. The left pane starts the architect Pi with the state-owned extension at 60% width; the right pane runs `nvim` at 40% width.
+6. A second, independent junior Pi starts in a background tmux window in the same checkout. Press Alt+A or run `/oak-tree switch` inside either Pi to switch the visible agent. Both continue running when hidden.
+7. oak-tree records the session, both Pi pane ids, root, and active working directory.
 8. oak-tree publishes the session's pane ids as tmux session user options (see [tmux session options](#tmux-session-options)).
 
 ## Create With Branch
@@ -77,9 +77,9 @@ CLI creation does not require or consult `root_search_dirs` or `roots`.
 
 ## Pi lifecycle
 
-Oak-tree installs its state-owned extension into Pi's global extension directory and launches Pi with `OAK_TREE_SESSION_ID`. It also appends a managed-checkout instruction telling Pi to work in the branch and worktree oak-tree already selected, and not to create or switch branches or worktrees unless the user explicitly asks. The extension sends lifecycle events to `oak-tree hook agent-event`, including Pi's session id and session file. This keeps `/new`, `/resume`, and `/fork` linked to the same oak-tree session.
+Oak-tree installs its state-owned extension into Pi's global extension directory and launches both Pi processes with `OAK_TREE_SESSION_ID`. Both use `openai-codex/gpt-6.1-terra` with high thinking. The architect handles routine work directly and delegates isolated or parallel tasks to the junior when that saves work. For a difficult question, it may consult the existing read-only Agent/Explore tool using `openai-codex/gpt-6-astra` with low thinking, fresh context and at most six turns; if the tool is unavailable, it reports the limitation without an expensive fallback. User approval requirements for reviewer and implementation subagents remain in force. Their unique Pi session names let them address each other through pi-intercom, which must be installed and enabled. They share the working tree and are instructed to coordinate edits. The dashboard aggregates per-agent status with question taking priority over working, attention and idle, and combines their todo summaries. Existing sessions are not converted automatically. It also appends a managed-checkout instruction telling Pi to work in the branch and worktree oak-tree already selected, and not to create or switch branches or worktrees unless the user explicitly asks. The extension sends lifecycle events to `oak-tree hook agent-event`, including Pi's session id and session file. This keeps `/new`, `/resume`, and `/fork` linked to the same oak-tree session.
 
-If Pi is closed and restarted manually inside the same oak-tree tmux session, run `/oak-tree register`. The extension resolves the oak-tree session from the current tmux pane, replaces the recorded Pi pane, and starts reporting the replacement Pi session's lifecycle and usage identity. The command fails outside tmux or when the tmux session is not managed by oak-tree.
+For older single-agent sessions, if Pi is closed and restarted manually inside the same oak-tree tmux session, run `/oak-tree register`. The extension resolves the oak-tree session from the current tmux pane, replaces the recorded Pi pane, and starts reporting the replacement Pi session's lifecycle and usage identity. Paired sessions do not yet support manually replacing either Pi pane; closing one agent leaves its tab unavailable until a new oak-tree session is created.
 
 ## tmux session options
 
@@ -89,11 +89,15 @@ Each managed tmux session carries these session-scoped user options so external 
 | --- | --- |
 | `@oak_tree_session_id` | oak-tree session ID |
 | `@oak_nvim_pane` | tmux pane ID running `nvim`, for example `%61` |
-| `@oak_pi_pane` | tmux pane ID running Pi, for example `%62` |
+| `@oak_pi_pane` | tmux pane ID of the visible Pi, for example `%62` |
+| `@oak_architect_pane` | tmux pane ID of the architect Pi |
+| `@oak_junior_pane` | tmux pane ID of the junior Pi |
 
-Oak-tree sets them with `tmux set-option -t <tmux-session-id> ...` after creating the session, and sets them again when a Pi hook reports `session_start` or a Pi pane different from the recorded one. That also backfills sessions created before this behavior once Pi restarts or runs `/oak-tree register`. Other hook events do not run tmux. Setting the options is best effort: failures are recorded in command diagnostics and never fail session creation or hook handling. Read them with `tmux show-options -t <session> -v @oak_pi_pane`; a missing option means the session is not managed by oak-tree or the options have not been published yet, so consumers should fall back to pane discovery.
+Oak-tree sets them with `tmux set-option -t <tmux-session-id> ...` after creating the session. For paired sessions, switching agents updates `@oak_pi_pane`; for single-agent sessions a Pi hook refreshes the original options on `session_start` or a changed Pi pane. That also backfills sessions created before this behavior once Pi restarts or runs `/oak-tree register`. Other hook events do not run tmux. The two agent-specific options are required for paired session creation; publishing the common options and later visible-pane updates is best effort. Read them with `tmux show-options -t <session> -v @oak_pi_pane`; a missing option means the session is not managed by oak-tree or the options have not been published yet, so consumers should fall back to pane discovery.
 
 The extension consumes `@juicesharp/rpiv-ask-user-question`'s `rpiv:ask-user:prompt` event and observes that tool's completion. It also consumes `@eko24ive/pi-ask`'s `@eko24ive/pi-ask:started` and `@eko24ive/pi-ask:completed` events for `ask_user` forms. When neither `ask_user_question` nor `ask_user` is available, it registers a simpler `question` fallback. Answering or cancelling either UI restores `working`. `agent_settled` is represented as `attention` and sends a best-effort desktop notification; shutdown is `idle`. Only the top-level TUI runtime reports these events; embedded SDK sessions used by subagents run in print mode and are ignored. Ordinary prose prompts still use the pane heuristic as a fallback.
+
+Every `agent_start` clears a `WAITING REVIEW` or `BLOCKED` tag, so a parked session returns to the active columns when any run starts, whether from a typed prompt or an extension such as pi-intercom.
 
 When `@juicesharp/rpiv-todo` is loaded, the same extension reads the latest persisted `todo` tool-result details during `session_start` and after each successful `todo` execution. It sends visible task subjects, statuses, and counts through the agent-event hook. Deleted tasks are ignored; invalid count summaries are rejected at the hook boundary.
 
@@ -101,11 +105,55 @@ After a managed session registers successfully, the extension adds an active `ca
 
 ## Dashboard Session Table
 
+`oak-tree popup` opens the dashboard at 95% of the tmux client width and height. The coordination group dialog keeps its separate size limit.
+
 The dashboard is a full-width, dense session table optimized for session management. Each row shows agent state, project/session, branch, Git state, cached PR state, Pi todo progress on wide layouts, and usage where available. Todo progress uses completed/total counts with distinct in-progress, pending, and complete chips; `space` expands or collapses the selected session's task subjects inline. Summary counters highlight sessions needing attention, working, ready, waiting review, and blocked. A manually tagged testing session remains active and appears in a full-width `TESTING NOW` strip above the kanban columns, including its live `QUESTION`, `WORKING`, or `READY` agent state. In kanban view, the initial selection stays on the board when one is available; `tab` moves focus between the testing strip and the board, and arrow keys stay within the focused area. Manually tagged review and blocked sessions are excluded from the active count and grouped in separate parked sections below active sessions. Their kanban cards show a compact age measured from the latest tag change; legacy records fall back to session creation time because their original tag time was not recorded. Sessions may also store a one-line note opened and edited with `e`; noted kanban cards show a highlighted `✎` icon instead of inline note text. The selected row is highlighted; `enter` attaches to the actual tmux workspace.
 
 In kanban layouts at least 120 columns wide, a `Campfire` rail appears to the right of the board. Pressing `c` hides or restores the rail; hiding it gives the kanban board the full width, and the preference persists across dashboard runs. The rail reads the global archive plus any live legacy per-session entries, deduplicates and sorts them newest-first, and shows each message's kind, project, relative age, and complete wrapped text. Closing a session leaves its archived messages intact. Narrower layouts keep the full-width board and omit the rail.
 
 The dashboard no longer renders a live agent-pane preview or polls tmux capture output. Agent pane capture remains available to lifecycle/status inference and service-level integrations, but it is not part of the dashboard rendering loop.
+
+## Agent Office
+
+Press `f` from the dashboard, or run `oak-tree office`, to open the local browser office. The dashboard remains available for session management. The office uses embedded pixel artwork and needs neither terminal graphics support nor a JavaScript build step. Opening it requires a browser and `xdg-open`.
+
+The office shows one character per recorded agent, including separate architect and junior characters for paired sessions. All sessions remain selectable regardless of coordination folding. Every character follows its session's dashboard status: working sessions use the work room, ready and question sessions use the central meeting room, and sessions parked for review or blocked use the break room. Review and blocked take precedence over a pending question, which remains accessible in the break room. For an active coordination group, a review- or blocked-tagged organizer sends the entire group to the break room, even when a member is working or has a question; questions remain answerable there. Unparked groups use each session's own state. Group members share a colored pennant and scarf, and the roster shows the group name. This affects only the office, not kanban status or counts. Characters walk through doorways when their session status changes. The roster uses the same session status and keeps every agent selectable; it identifies each by project, branch and role, with a short session ID when separate sessions share a project and branch. Root sessions are labeled explicitly. Narrow browser windows expose the roster through the `Agents` button.
+
+Bubbles and the inspector show recorded in-progress tasks, Campfire activity from the last ten minutes, or a status fallback. Campfire posts are recorded per session, not per paired agent, so they are labelled `Session update`. The browser refreshes this data without making AI calls. A disconnected view is explicitly marked; it does not invent new activity.
+
+| Control | Action |
+| --- | --- |
+| Click a character or roster entry | Select the agent and show its activity |
+| Double-click a character | Switch to its session and focus the terminal window in Hyprland |
+| Left mouse drag | Pick up and move a character |
+| Arrow keys, with the scene focused | Move the selected character |
+| `space` / `esc`, with the scene focused | Pick up/drop, or release the character |
+| Scroll wheel | Zoom around the pointer |
+| `shift` + drag empty space | Pan the room |
+| Room buttons | Focus the work, break, or meeting room without hiding the rest of the floor plan |
+| `f` or `Fit office` | Show all connected rooms |
+| Question bubble, `Answer question`, or scene-focused `enter` | Open the selected agent's live pi-ask form |
+| `Pause motion` | Stop automatic walking without stopping activity updates |
+
+Movement is cosmetic: picking up a character does not pause its agent, send instructions, or change its state. A dropped character waits briefly before resuming its walk; furniture and room boundaries constrain movement. Position changes are not persisted. Double-clicking opens the session, not a specific agent pane. This requires one tmux client, Hyprland with a Lua configuration, and a uniquely identifiable terminal window; ambiguous or unavailable targets are reported without guessing. Use the terminal dashboard to create or close sessions.
+
+The local server is reused between openings and survives closing the dashboard. It binds only to loopback and requires a private token for activity reads, explicit question answers, and session focus requests. Closing the browser does not affect agents; the server stops after thirty minutes without authenticated API requests. The runtime `office.json` file contains the token and must not be shared or committed.
+
+### Answering questions
+
+Browser answers support `@eko24ive/pi-ask` forms through its documented local event contract. After installing an oak-tree update, open the office/dashboard or create a session to refresh the managed extension, then use `/reload` in existing Pi sessions **when idle**. Do not interrupt working agents just to enable the office. Sessions without a live supported bridge still appear in the office; answer their questions in Pi.
+
+The question window shows the actual prompts, stable option values, descriptions, recommendations, and plain-text previews. It supports single/preview choices, multiple choices, custom text, and notes. Required indicators remain advisory, as in Pi. Closing the window preserves its browser draft and does not answer or cancel anything. `Cancel question in Pi` requires explicit confirmation.
+
+Sending replaces any unfinished answers in the terminal form. The first completed response wins. An answered, cancelled, restarted, or unavailable form cannot silently receive a stale response. If delivery cannot be confirmed, the browser does not retry; check Pi. Browser drafts stay in memory, not local storage, and do not synchronize with unfinished terminal edits. If the question type was changed in Pi after opening, Pi's current validation applies.
+
+The office adds **no background model calls, agent chatter, prompt instructions, or duplicate user messages**. Animation and routing use ordinary local code. Answers to live tool questions return through the original waiting tool. Reopened or resumed forms follow the same Pi follow-up behavior—and token usage—as answering them in the terminal. The agent's normal response after your answer still uses tokens.
+
+## Coordination Groups
+
+Sessions can temporarily organize or participate in one active coordination group. Press `g` to create or manage a group, or use the managed Pi `oak_coordination` tool. Kanban folds participant cards by default, preserves complete live counts, and retains selectable shortcuts for folded participants with questions. Manually testing participants remain in the testing strip. `space` shows or folds participants; group details and management appear only in the on-demand dialog. Table view still shows every session.
+
+Assignment progress is explicit (`pending`, `working`, `returned`, `accepted`) and independent of agent lifecycle events. Groups persist in `coordination.json` and refresh with agent status. Closing a group releases its sessions without closing them. Closing an organizer session closes its group; closing a participant removes its assignment and closes the group if no participants remain. See [Coordination groups](coordination.md) for commands and validation.
 
 ## Pull Request Metadata
 

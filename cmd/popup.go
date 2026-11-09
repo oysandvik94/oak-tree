@@ -34,7 +34,7 @@ func runPopup(ctx context.Context, svc *oaktree.Service) error {
 		return err
 	}
 	if os.Getenv("TMUX") != "" {
-		command := exec.CommandContext(ctx, "tmux", "display-popup", "-E", "-w", "90%", "-h", "90%", "--", exe)
+		command := exec.CommandContext(ctx, "tmux", oaktree.DisplayPopupArgs(exe)...)
 		command.Stdout = os.Stdout
 		command.Stderr = os.Stderr
 		command.Stdin = os.Stdin

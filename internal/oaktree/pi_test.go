@@ -21,7 +21,7 @@ func TestEnsurePiExtensionContainsLifecycleAndQuestionTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "registerCommand(\"oak-tree\"", "Usage: /oak-tree register", "managed: ctx.mode === \"tui\"", "!extra.managed", "tmux_pane", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "@eko24ive/pi-ask:started", "@eko24ive/pi-ask:completed", "tool.name === \"ask_user\"", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()", "campfire_update", "campfire_read", "campfire-read", "activity_kind", "activity_message", "StringEnum", "meaningful plan", "starting a distinct phase", "delegating work", "notable delegated result", "prefer a useful update over silence", "shared room, not a status API", "write in first person", "genuine difficulty", "This is hard", "I’m proud of this one", "Back to the trace", "do not flatten every post", "name the task and destination", "Handing auth cleanup", "Skip campfire_update only", "never invent feelings", "ambient awareness", "not a coordination channel", "Do not poll Campfire"} {
+	for _, want := range []string{"session_start", "agent_settled", "session_shutdown", "registerTool", "registerCommand(\"oak-tree\"", "Usage: /oak-tree switch|register", "pi.registerShortcut(\"alt+a\"", "args.trim() === \"switch\"", "managed: ctx.mode === \"tui\"", "!extra.managed", "tmux_pane", "getAllTools", "question", "promptGuidelines: [", "promptSnippet:", "executionMode: \"sequential\"", "rpiv:ask-user:prompt", "ask_user_question", "@eko24ive/pi-ask:started", "@eko24ive/pi-ask:completed", "tool.name === \"ask_user\"", "tool_execution_end", "result.code === 0", "todoSummary", "message.toolName === \"todo\"", "event.toolName === \"todo\"", "todo_in_progress", "todo_json", "task.subject.trim()", "campfire_update", "campfire_read", "campfire-read", "activity_kind", "activity_message", "StringEnum", "meaningful plan", "starting a distinct phase", "delegating work", "notable delegated result", "prefer a useful update over silence", "shared room, not a status API", "write in first person", "genuine difficulty", "This is hard", "I’m proud of this one", "Back to the trace", "do not flatten every post", "name the task and destination", "Handing auth cleanup", "Skip campfire_update only", "never invent feelings", "ambient awareness", "not a coordination channel", "Do not poll Campfire"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("extension missing %q", want)
 		}
@@ -73,7 +73,7 @@ func TestPiCommandUsesPrivateExtensionAndOakSessionIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(command) != 6 || command[0] != "env" || command[1] != "OAK_TREE_SESSION_ID=oak-session-1" || !strings.HasPrefix(command[2], "OAK_TREE_HOOK=") || command[3] != "pi" || command[4] != "--append-system-prompt" || command[5] != piManagedCheckoutPrompt {
+	if len(command) != 7 || command[0] != "env" || command[1] != "OAK_TREE_SESSION_ID=oak-session-1" || command[2] != "OAK_TREE_STATE_DIR="+state || !strings.HasPrefix(command[3], "OAK_TREE_HOOK=") || command[4] != "pi" || command[5] != "--append-system-prompt" || command[6] != piManagedCheckoutPrompt {
 		t.Fatalf("PiCommand() = %#v", command)
 	}
 	if _, err := os.Stat(PiExtensionPath(paths)); err != nil {
@@ -81,6 +81,33 @@ func TestPiCommandUsesPrivateExtensionAndOakSessionIdentity(t *testing.T) {
 	}
 	if _, err := os.Stat(PiAutoExtensionPath(paths)); err != nil {
 		t.Fatalf("auto-discovered Pi extension not written: %v", err)
+	}
+}
+
+func TestPairedPiCommandUsesCheapModelsAndBoundedExpert(t *testing.T) {
+	base := []string{"env", "OAK_TREE_SESSION_ID=test", "OAK_TREE_HOOK=hook", "pi", "--append-system-prompt", piManagedCheckoutPrompt}
+	original := append([]string(nil), base...)
+	for _, role := range []string{"architect", "junior"} {
+		command := PairedPiCommand(base, "test", role)
+		joined := strings.Join(command, " ")
+		for _, want := range []string{"OAK_TREE_AGENT_ROLE=" + role, "--model openai-codex/gpt-6.1-terra", "--thinking high", "--name oak-test-" + role, piManagedCheckoutPrompt} {
+			if !strings.Contains(joined, want) {
+				t.Errorf("%s command missing %q: %v", role, want, command)
+			}
+		}
+		if strings.Contains(joined, "--model openai-codex/gpt-6-astra") {
+			t.Errorf("%s must not launch the persistent agent on Astra", role)
+		}
+		if role == "architect" {
+			for _, want := range []string{"Handle routine work directly", "only when doing so saves work", "read-only Explore", "model openai-codex/gpt-6-astra", "thinking low", "inherit_context false", "max_turns 6", "If Agent or Explore is unavailable", "approval requirements"} {
+				if !strings.Contains(joined, want) {
+					t.Errorf("architect prompt missing %q", want)
+				}
+			}
+		}
+	}
+	if !reflect.DeepEqual(base, original) {
+		t.Fatalf("PairedPiCommand modified base: %v", base)
 	}
 }
 
@@ -175,6 +202,37 @@ func TestHandleAgentEventUsesDirectOakIdentityAndPiStatus(t *testing.T) {
 	}
 	if notifications["Pi finished working"] != 1 {
 		t.Fatalf("completion notifications = %#v, want one", notifications)
+	}
+}
+
+func TestHandleAgentEventAgentStartClearsParkedTags(t *testing.T) {
+	state := t.TempDir()
+	store := NewStore(state)
+	taggedAt := time.Now().UTC().Add(-time.Hour)
+	sessions := []Session{
+		{ID: "review", RightPaneID: "%2", Tag: SessionTagWaitingReview, TagUpdatedAt: &taggedAt, AgentStatus: AgentStatusAttention, CreatedAt: time.Now().UTC()},
+		{ID: "blocked", RightPaneID: "%3", Tag: SessionTagBlocked, TagUpdatedAt: &taggedAt, AgentStatus: AgentStatusAttention, CreatedAt: time.Now().UTC()},
+	}
+	for _, session := range sessions {
+		if err := store.SaveSession(session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewService(Paths{StateDir: state}, store, &stubRunner{})
+	for _, session := range sessions {
+		if err := svc.HandleAgentEvent(context.Background(), AgentEvent{OakSessionID: session.ID, Event: "agent_start"}); err != nil {
+			t.Fatalf("HandleAgentEvent(%s): %v", session.ID, err)
+		}
+		got, err := store.LoadSession(session.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Tag != SessionTagNone || got.TagUpdatedAt != nil {
+			t.Fatalf("%s tag = %q (%v), want cleared", session.ID, got.Tag, got.TagUpdatedAt)
+		}
+		if got.AgentStatus != AgentStatusWorking {
+			t.Fatalf("%s status = %q, want working", session.ID, got.AgentStatus)
+		}
 	}
 }
 

@@ -22,8 +22,10 @@ import (
 type dashboardMsg struct {
 	sessions    []Session
 	campfire    []CampfireMessage
+	groups      []CoordinationGroup
 	err         error
 	campfireErr error
+	groupErr    error
 }
 
 type animationTickMsg struct{}
@@ -59,6 +61,10 @@ type openPRMsg struct {
 	err error
 }
 
+type officeOpenMsg struct {
+	err error
+}
+
 type tagUpdateMsg struct {
 	session Session
 	err     error
@@ -85,8 +91,10 @@ type usageTickMsg struct{}
 type agentStatusRefreshMsg struct {
 	sessions    []Session
 	campfire    []CampfireMessage
+	groups      []CoordinationGroup
 	err         error
 	campfireErr error
+	groupErr    error
 }
 
 type gitStatusTickMsg struct{}
@@ -111,6 +119,12 @@ const (
 	modeConfirmClose
 	modeTagPicker
 	modeNoteEditor
+	modeCoordination
+	modeCoordinationName
+	modeCoordinationParticipants
+	modeCoordinationTask
+	modeCoordinationResult
+	modeCoordinationClose
 )
 
 type tagOption struct {
@@ -548,6 +562,9 @@ type DashboardModel struct {
 	svc                  *Service
 	sessions             []Session
 	campfire             []CampfireMessage
+	coordinationGroups   []CoordinationGroup
+	expandedGroups       map[string]bool
+	groupDialog          coordinationDialog
 	selected             int
 	help                 help.Model
 	usage                UsageCache
@@ -579,6 +596,7 @@ type DashboardModel struct {
 	todoExpanded         bool
 	kanbanView           bool
 	campfireHidden       bool
+	officeOpening        bool
 	kanbanBoardSessionID string
 	statusSeenAt         map[string]time.Time
 }
@@ -624,7 +642,8 @@ func (m DashboardModel) agentStatusRefreshCmd() tea.Cmd {
 			return agentStatusRefreshMsg{err: err}
 		}
 		campfire, campfireErr := m.svc.Store.LoadCampfire()
-		return agentStatusRefreshMsg{sessions: sessions, campfire: campfire, campfireErr: campfireErr}
+		groups, groupErr := m.svc.Store.LoadCoordinationGroups()
+		return agentStatusRefreshMsg{sessions: sessions, campfire: campfire, campfireErr: campfireErr, groups: groups, groupErr: groupErr}
 	})
 }
 
@@ -635,7 +654,8 @@ func (m DashboardModel) refreshCmd() tea.Cmd {
 			return dashboardMsg{err: err}
 		}
 		campfire, campfireErr := m.svc.Store.LoadCampfire()
-		return dashboardMsg{sessions: sessions, campfire: campfire, campfireErr: campfireErr}
+		groups, groupErr := m.svc.Store.LoadCoordinationGroups()
+		return dashboardMsg{sessions: sessions, campfire: campfire, campfireErr: campfireErr, groups: groups, groupErr: groupErr}
 	}
 }
 
@@ -1046,6 +1066,8 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.form.syncLayout(msg.Width, msg.Height)
 		} else if m.mode == modeNoteEditor {
 			m.noteInput.SetWidth(max(12, min(msg.Width, 100)-4))
+		} else if m.mode >= modeCoordination && m.mode <= modeCoordinationClose {
+			m.groupDialog.input.SetWidth(max(10, min(msg.Width-10, 90)-len(m.groupDialog.input.Prompt)))
 		}
 		return m, nil
 	case dashboardMsg:
@@ -1060,7 +1082,13 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.err = fmt.Errorf("load Campfire: %w", msg.campfireErr)
 		}
-		m = m.withSessionsPreservingSelection(msg.sessions).syncStatusSeenAt()
+		m = m.withSessionsPreservingSelection(msg.sessions)
+		if msg.groupErr == nil {
+			m = m.withCoordinationGroups(msg.groups)
+		} else {
+			m.err = fmt.Errorf("load coordination groups: %w", msg.groupErr)
+		}
+		m = m.normalizeCoordinationSelection().syncStatusSeenAt()
 		if len(m.sessions) == 0 {
 			if m.status == "refreshing" {
 				m.status = "ready"
@@ -1087,7 +1115,16 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.err = fmt.Errorf("load Campfire: %w", msg.campfireErr)
 			}
-			m = m.withSessionsPreservingVisibleOrder(m.preserveAgentSnapshotTransient(msg.sessions)).syncStatusSeenAt()
+			m = m.withSessionsPreservingVisibleOrder(m.preserveAgentSnapshotTransient(msg.sessions))
+			if msg.groupErr == nil {
+				m = m.withCoordinationGroups(msg.groups)
+				if m.err != nil && strings.HasPrefix(m.err.Error(), "load coordination groups:") {
+					m.err = nil
+				}
+			} else {
+				m.err = fmt.Errorf("load coordination groups: %w", msg.groupErr)
+			}
+			m = m.normalizeCoordinationSelection().syncStatusSeenAt()
 		}
 		cmds := []tea.Cmd{m.agentStatusRefreshCmd()}
 		return m.withAnimationCmd(cmds...)
@@ -1099,7 +1136,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "git refresh failed"
 			return m, nil
 		}
-		m = m.withSessionsPreservingVisibleOrder(msg.sessions)
+		m = m.withSessionsPreservingVisibleOrder(msg.sessions).normalizeCoordinationSelection()
 		prCmds, updated := m.autoPRRefreshCmds(time.Now())
 		m = updated
 		if len(prCmds) > 0 {
@@ -1249,6 +1286,25 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.status = "note saved"
 		return m, nil
+	case coordinationUpdateMsg:
+		m.groupDialog.busy = false
+		if msg.err != nil {
+			m.err = msg.err
+			m.status = "coordination update failed"
+			return m, nil
+		}
+		m.err = nil
+		m = m.withCoordinationGroups([]CoordinationGroup{msg.group})
+		m.groupDialog.groupID = msg.group.ID
+		m.groupDialog.cursor = min(m.groupDialog.cursor, len(msg.group.Assignments))
+		m.groupDialog.detailOffset = 0
+		m.groupDialog.input.Blur()
+		m.mode = modeCoordination
+		if msg.group.ClosedAt != nil {
+			m.mode = modeDashboard
+		}
+		m.status = "coordination saved"
+		return m.normalizeCoordinationSelection(), nil
 	case usageCacheMsg:
 		if msg.err != nil {
 			m.usageErr = msg.err
@@ -1281,6 +1337,15 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "usage refreshed"
 		}
 		return m, nil
+	case officeOpenMsg:
+		m.officeOpening = false
+		m.err = msg.err
+		if msg.err != nil {
+			m.status = "office open failed"
+		} else {
+			m.status = "office opened"
+		}
+		return m, nil
 	case usageTickMsg:
 		return m, tea.Batch(m.usageCacheCmd(), m.usageTickCmd())
 	case animationTickMsg:
@@ -1295,6 +1360,8 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTagPicker(msg)
 		case modeNoteEditor:
 			return m.updateNoteEditor(msg)
+		case modeCoordination, modeCoordinationName, modeCoordinationParticipants, modeCoordinationTask, modeCoordinationResult, modeCoordinationClose:
+			return m.updateCoordination(msg)
 		default:
 			return m.updateDashboard(msg)
 		}
@@ -1304,6 +1371,14 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "f":
+		if m.mode == modeDashboard && !m.officeOpening {
+			m.officeOpening = true
+			m.err = nil
+			m.status = "opening office"
+			return m, func() tea.Msg { return officeOpenMsg{err: OpenOffice(context.Background(), m.svc.Paths.StateDir)} }
+		}
+		return m, nil
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "r":
@@ -1355,8 +1430,11 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.noteInput.Focus()
 		}
 		return m, nil
+	case "g":
+		return m.beginCoordination()
 	case "v":
 		m.kanbanView = !m.kanbanView
+		m = m.normalizeCoordinationSelection()
 		m.todoExpanded = false
 		if m.svc != nil && m.svc.Store != nil {
 			if err := m.svc.Store.SaveDashboardPreferences(DashboardPreferences{KanbanView: m.kanbanView, CampfireHidden: m.campfireHidden, StatusSeenAt: m.statusSeenAt}); err != nil {
@@ -1378,6 +1456,10 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "space":
+		if m.kanbanView {
+			m = m.toggleCoordinationExpansion()
+			return m.syncStatusSeenAt().withAnimationCmd()
+		}
 		if !m.kanbanView {
 			if sel := m.currentSession(); sel != nil && sel.Todo != nil && len(sel.Todo.Tasks) > 0 {
 				m.todoExpanded = !m.todoExpanded
@@ -1389,16 +1471,17 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.kanbanView {
 			return m, nil
 		}
-		if sel := m.currentSession(); sel != nil && sel.Tag == SessionTagTesting {
-			for i := range m.sessions {
-				if m.sessions[i].ID == m.kanbanBoardSessionID && m.sessions[i].Tag != SessionTagTesting {
-					m.selected = i
+		visible, indexes := m.boardProjection()
+		if sel := m.currentSession(); sel != nil && sel.Tag == SessionTagTesting && !m.coordinatedQuestion(*sel) {
+			for i, session := range visible {
+				if session.ID == m.kanbanBoardSessionID && session.Tag != SessionTagTesting {
+					m.selected = indexes[i]
 					return m.syncStatusSeenAt().withAnimationCmd()
 				}
 			}
-			for i := range m.sessions {
-				if m.sessions[i].Tag != SessionTagTesting {
-					m.selected = i
+			for i, session := range visible {
+				if session.Tag != SessionTagTesting {
+					m.selected = indexes[i]
 					return m.syncStatusSeenAt().withAnimationCmd()
 				}
 			}
@@ -1407,22 +1490,22 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if sel := m.currentSession(); sel != nil {
 			m.kanbanBoardSessionID = sel.ID
 		}
-		for i := range m.sessions {
-			if m.sessions[i].Tag == SessionTagTesting {
-				m.selected = i
+		for i, session := range visible {
+			if session.Tag == SessionTagTesting {
+				m.selected = indexes[i]
 				return m.syncStatusSeenAt().withAnimationCmd()
 			}
 		}
 		return m, nil
 	case "h", "left":
 		if m.kanbanView {
-			m.selected = kanbanSelection(m.sessions, m.selected, -1, 0)
+			m.selected = m.coordinationSelection(-1, 0)
 			return m.syncStatusSeenAt().withAnimationCmd()
 		}
 		return m, nil
 	case "l", "right":
 		if m.kanbanView {
-			m.selected = kanbanSelection(m.sessions, m.selected, 1, 0)
+			m.selected = m.coordinationSelection(1, 0)
 			return m.syncStatusSeenAt().withAnimationCmd()
 		}
 		return m, nil
@@ -1431,10 +1514,10 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.kanbanView {
-			if m.sessions[m.selected].Tag == SessionTagTesting {
+			if m.sessions[m.selected].Tag == SessionTagTesting && !m.coordinatedQuestion(m.sessions[m.selected]) {
 				return m, nil
 			}
-			m.selected = kanbanSelection(m.sessions, m.selected, 0, 1)
+			m.selected = m.coordinationSelection(0, 1)
 			return m.syncStatusSeenAt().withAnimationCmd()
 		}
 		if m.selected < len(m.sessions)-1 {
@@ -1447,10 +1530,10 @@ func (m DashboardModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.kanbanView {
-			if m.sessions[m.selected].Tag == SessionTagTesting {
+			if m.sessions[m.selected].Tag == SessionTagTesting && !m.coordinatedQuestion(m.sessions[m.selected]) {
 				return m, nil
 			}
-			m.selected = kanbanSelection(m.sessions, m.selected, 0, -1)
+			m.selected = m.coordinationSelection(0, -1)
 			return m.syncStatusSeenAt().withAnimationCmd()
 		}
 		if m.selected > 0 {
@@ -1638,6 +1721,9 @@ func (m DashboardModel) View() tea.View {
 	outerHeight := m.height
 	if outerHeight <= 0 {
 		outerHeight = 30
+	}
+	if m.mode >= modeCoordination && m.mode <= modeCoordinationClose {
+		return m.renderCoordinationView(outerWidth, outerHeight)
 	}
 	contentWidth := max(40, outerWidth-2)
 	header := m.renderHeader(contentWidth)
@@ -1971,17 +2057,29 @@ func (m DashboardModel) renderKanbanPanel(width, height int) string {
 	counts := [5]int{}
 	buckets := [5][]int{}
 	testingIndexes := []int{}
-	for i, session := range m.sessions {
+	for _, session := range m.sessions {
 		bucket := sessionDashboardBucket(session)
+		if m.coordinatedQuestion(session) {
+			bucket = 0
+		}
 		counts[bucket]++
+	}
+	visible, indexes := m.boardProjection()
+	visibleCounts := [5]int{}
+	for i, session := range visible {
+		bucket := sessionDashboardBucket(session)
+		visibleCounts[bucket]++
 		if session.Tag == SessionTagTesting {
-			testingIndexes = append(testingIndexes, i)
+			testingIndexes = append(testingIndexes, indexes[i])
 			continue
 		}
-		buckets[bucket] = append(buckets[bucket], i)
+		buckets[bucket] = append(buckets[bucket], indexes[i])
 	}
 	parked := counts[3] + counts[4]
 	title := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true).Render("◈ Sessions") + " " + lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(fmt.Sprintf("%d active", len(m.sessions)-parked))
+	if folded := len(m.sessions) - len(visible); folded > 0 {
+		title += lipgloss.NewStyle().Foreground(lipgloss.Color("221")).Render(fmt.Sprintf(" · %d folded", folded))
+	}
 	if len(m.sessions) == 0 {
 		return panelStyle.Render(title + "\n\n" + m.renderEmptySessions(innerWidth))
 	}
@@ -1992,15 +2090,16 @@ func (m DashboardModel) renderKanbanPanel(width, height int) string {
 	columnHeight := max(1, height-4)
 	parts := []string{title, summary}
 	if len(testingIndexes) > 0 {
-		parts = append(parts, m.renderTestingStrip(testingIndexes, innerWidth))
-		columnHeight = max(1, columnHeight-3)
+		strip := m.renderTestingStrip(testingIndexes, innerWidth)
+		parts = append(parts, strip)
+		columnHeight = max(1, columnHeight-lipgloss.Height(strip))
 	}
 	columns := make([]string, 0, 9)
 	for i := range labels {
 		if i > 0 {
 			columns = append(columns, " ")
 		}
-		columns = append(columns, m.renderKanbanColumn(labels[i], colors[i], buckets[i], columnWidth, columnHeight))
+		columns = append(columns, m.renderKanbanColumn(labels[i], colors[i], buckets[i], columnWidth, columnHeight, counts[i], counts[i]-visibleCounts[i]))
 	}
 	parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, columns...))
 	return panelStyle.Render(strings.Join(parts, "\n"))
@@ -2041,30 +2140,60 @@ func (m DashboardModel) renderTestingStrip(sessionIndexes []int, width int) stri
 	}
 	details = truncateMiddle(details, max(1, width-lipgloss.Width(label)-lipgloss.Width(stateChip)-lipgloss.Width(hint)-10))
 	line := label + "  " + stateChip + "  " + lipgloss.NewStyle().Foreground(lipgloss.Color(foreground)).Background(lipgloss.Color(background)).Render(details) + "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(hint)
+	if group := m.groupForSession(session.ID); group != nil && group.OrganizerID == session.ID {
+		summary := "ORGANIZER · " + group.Name + " · " + m.coordinationProgress(*group)
+		line += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("221")).Render(truncateMiddle(summary, max(1, width-2)))
+	}
 	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(border)).Width(max(1, width-2)).Render(line)
 }
 
-func (m DashboardModel) renderKanbanColumn(label, color string, sessionIndexes []int, width, height int) string {
+func (m DashboardModel) renderKanbanColumn(label, color string, sessionIndexes []int, width, height, count, folded int) string {
 	contentWidth := max(1, width-2)
-	header := truncateMiddle(fmt.Sprintf("%s %d", label, len(sessionIndexes)), contentWidth)
+	header := truncateMiddle(fmt.Sprintf("%s %d", label, count), contentWidth)
 	lines := []string{lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Bold(true).Render(header)}
+	if folded > 0 {
+		explanation := fmt.Sprintf("%d folded into groups", folded)
+		if lipgloss.Width(explanation) > contentWidth {
+			explanation = fmt.Sprintf("%d folded", folded)
+		}
+		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(ansi.Truncate(explanation, contentWidth, "…")))
+	}
 	if len(sessionIndexes) == 0 {
-		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render("—"))
+		if folded == 0 {
+			lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render("—"))
+		}
 	} else if height >= 4 {
-		maxCards := max(1, (height-1)/4)
-		start := 0
-		for i, sessionIndex := range sessionIndexes {
-			if sessionIndex == m.selected && i >= maxCards {
-				start = i - maxCards + 1
+		cards := make([][]string, len(sessionIndexes))
+		start, used := 0, 0
+		for i, index := range sessionIndexes {
+			cards[i] = m.renderKanbanItem(index, contentWidth, color)
+		}
+		for i, index := range sessionIndexes {
+			used += len(cards[i])
+			if i > 0 {
+				used++
+			}
+			if index == m.selected {
+				for used > height-len(lines) && start < i {
+					used -= len(cards[start]) + 1
+					start++
+				}
 				break
 			}
 		}
-		end := min(len(sessionIndexes), start+maxCards)
-		for i, sessionIndex := range sessionIndexes[start:end] {
-			if i > 0 {
+		for i := start; i < len(cards); i++ {
+			gap := 0
+			if i > start {
+				gap = 1
+			}
+			if len(lines)+gap+len(cards[i]) > height && i > start {
+				break
+			}
+			if gap > 0 {
 				lines = append(lines, "")
 			}
-			lines = append(lines, m.renderKanbanCard(m.sessions[sessionIndex], sessionIndex == m.selected, contentWidth, color)...)
+			remaining := max(0, height-len(lines))
+			lines = append(lines, cards[i][:min(len(cards[i]), remaining)]...)
 		}
 	}
 	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(color)).Width(contentWidth).Height(height).Render(strings.Join(lines, "\n"))
@@ -2805,7 +2934,7 @@ func (m DashboardModel) footerBindings() []key.Binding {
 		if m.kanbanView {
 			move = key.NewBinding(key.WithKeys("h", "j", "k", "l", "up", "down", "left", "right"), key.WithHelp("hjkl", "move"))
 		}
-		bindings := []key.Binding{move}
+		bindings := []key.Binding{move, key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "office"))}
 		if m.kanbanView {
 			campfireAction := "hide fire"
 			if m.campfireHidden {
@@ -2819,7 +2948,15 @@ func (m DashboardModel) footerBindings() []key.Binding {
 				}
 			}
 		}
-		bindings = append(bindings, key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "attach")))
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "attach")),
+			key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "group")),
+		)
+		if m.kanbanView {
+			if selected := m.currentSession(); selected != nil && m.groupForSession(selected.ID) != nil {
+				bindings = append(bindings, key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "fold")))
+			}
+		}
 		if !m.kanbanView {
 			if selected := m.currentSession(); selected != nil && selected.Todo != nil && len(selected.Todo.Tasks) > 0 {
 				bindings = append(bindings, key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "todo")))

@@ -55,6 +55,28 @@ Pi integration requires an installed `pi` binary and a durable `oak-tree` execut
 
 Confirm each linked session row shows its `ccusage@20.0.20` cost after the background usage refresh completes. The selected row should be highlighted, and rows should not repeat a `tmux` label. A row is matched only when its stored Pi session ID is the same UUID as `ccusage`'s `period`; a path is accepted only if it embeds exactly one UUID.
 
+## Manual Office Verification
+
+1. Run `oak-tree office`, or press `f` in the dashboard. Confirm a local browser page opens with separate paired-agent characters, live task text, and all sessions in the roster.
+2. Change an agent's task/state through normal Pi activity. Confirm the page updates without reloading, and shared Campfire bubbles say `Session update`.
+3. Drag a character, then select a roster entry and use Space/arrow keys to move it. Confirm furniture constrains placement and no real agent state changes.
+4. Zoom, pan, focus each room, use `Fit office`, and resize to a narrow browser window. Confirm hit-testing stays aligned and the `Agents` drawer remains usable.
+5. Pause motion. Confirm activity still updates while automatic walking stops. Check the reduced-motion browser preference as well.
+6. Reopen the office and confirm the server is reused. Close the dashboard and confirm the page remains live. Verify disconnection is visible if the office server stops.
+7. In an isolated test state directory, verify wrong/missing tokens, foreign/null Origins, unexpected Hosts, unsupported methods, and unknown asset paths are rejected. Answer POSTs also require a same-origin header, JSON content, and a bounded body. Use synthetic text containing HTML to confirm it is displayed as text rather than interpreted.
+8. Verify every agent follows its session's dashboard state: working sessions use the work room, ready and question sessions use the central meeting room, and review or blocked sessions use the break room. Parked states take precedence over questions. Change a state and observe a doorway crossing, not a teleport or wall crossing.
+9. Use synthetic pi-ask flows to exercise single, multi, preview, custom-text, note, and explicit cancellation responses. Confirm normalized values/labels reach the original flow exactly once. Check terminal completion, stale/replayed IDs, invalid answers, missing acknowledgements, reload/shutdown, disconnected sockets, and draft preservation during polling. Do not answer real pending questions as a test.
+
+Focused checks do not require a model call:
+
+```sh
+go test ./internal/oaktree -run '^(TestOffice|TestPiOffice|TestPiCommand|TestEnsurePiExtension)' -count=1
+```
+
+To also check the installed pi-ask normalizer, set `PI_ASK_REMOTE_SOURCE` to its `src/remote-ask.ts` file. That optional contract harness uses Node's TypeScript stripping (Node 24 or newer), copies only that source to a test directory, and never launches an agent or modifies the installed package. Socket and mock-event tests use isolated state directories. Use Node 24 or newer when running the bridge tests; the Go-only server tests do not require Node.
+
+The browser sources and generated PNG assets are embedded from `internal/oaktree/officeweb/`. There is no npm build or runtime Python requirement. To regenerate artwork, use Python/Pillow as described in [the artwork generator](../tools/office-art/README.md). Keep browser screenshots, test state, and authentication records outside the checkout.
+
 ## Usage Accounting
 
 The dashboard deliberately parses the pinned `ccusage@20.0.20 session --json` Pi row schema and fails its refresh on a schema change rather than guessing field aliases. Its cost is scoped to the Pi session IDs stored on that oak-tree session; it is not the global Waybar amount.

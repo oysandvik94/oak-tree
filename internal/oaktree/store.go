@@ -149,6 +149,9 @@ func (s *Store) DeleteSession(id string) error {
 		if err != nil {
 			return err
 		}
+		if err := s.removeSessionFromCoordination(id); err != nil {
+			return err
+		}
 		// Campfire is auxiliary; a broken archive must not block session cleanup.
 		_ = s.archiveSessionCampfire(session)
 		return os.Remove(SessionFilePath(s.StateDir, id))

@@ -136,7 +136,7 @@ func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (
 	}
 	sessionName := tmuxSessionName(root, branch, id)
 	now := time.Now().UTC()
-	session := Session{ID: id, Root: root, Workdir: workdir, RepoKey: repoKey, Branch: branch, OwnedWorktree: ownedWorktree, TmuxSessionName: sessionName, CreatedAt: now, UpdatedAt: now}
+	session := Session{ID: id, Root: root, Workdir: workdir, RepoKey: repoKey, Branch: branch, OwnedWorktree: ownedWorktree, TmuxSessionName: sessionName, CreatedAt: now, UpdatedAt: now, Agents: map[string]PairedAgent{"architect": {}, "junior": {}}}
 	// Pi may emit session_start as soon as the pane starts, so make identity
 	// resolvable before launching tmux. The record is removed on any failure.
 	if err := s.Store.SaveSession(session); err != nil {
@@ -153,13 +153,20 @@ func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (
 		}
 		return Session{}, createSessionStepError(root, "prepare Pi", err)
 	}
-	tmuxSession, err := CreateTmuxSessionWithCommand(ctx, s.Exec, sessionName, workdir, rightCommand)
+	tmuxSession, err := CreateTmuxSessionWithCommand(ctx, s.Exec, sessionName, workdir, PairedPiCommand(rightCommand, id, "architect"))
 	if err != nil {
 		if ownedWorktree {
 			_ = RemoveWorktree(ctx, s.Exec, root, workdir)
 		}
 		_ = s.Store.DeleteSession(id)
 		return Session{}, createSessionStepError(root, fmt.Sprintf("create tmux session %s in %s", sessionName, workdir), err)
+	}
+	cleanup := func() {
+		_ = KillTmuxSession(ctx, s.Exec, tmuxSession.Name)
+		_ = s.Store.DeleteSession(id)
+		if ownedWorktree {
+			_ = RemoveWorktree(ctx, s.Exec, root, workdir)
+		}
 	}
 	session.TmuxSessionName, session.TmuxSessionID = tmuxSession.Name, tmuxSession.ID
 	session.LeftPaneID, session.RightPaneID, session.UpdatedAt = tmuxSession.LeftPaneID, tmuxSession.RightPaneID, time.Now().UTC()
@@ -168,12 +175,29 @@ func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (
 		stored.LeftPaneID, stored.RightPaneID, stored.UpdatedAt = session.LeftPaneID, session.RightPaneID, session.UpdatedAt
 		return nil
 	}); err != nil {
-		_ = KillTmuxSession(ctx, s.Exec, tmuxSession.Name)
-		_ = s.Store.DeleteSession(id)
-		if ownedWorktree {
-			_ = RemoveWorktree(ctx, s.Exec, root, workdir)
-		}
+		cleanup()
 		return Session{}, createSessionStepError(root, fmt.Sprintf("save session state for %s", sessionName), err)
+	}
+	juniorPane, err := CreateAgentWindow(ctx, s.Exec, sessionName, workdir, PairedPiCommand(rightCommand, id, "junior"))
+	if err != nil {
+		cleanup()
+		return Session{}, createSessionStepError(root, "create junior Pi window", err)
+	}
+	if err := s.Store.UpdateSession(session.ID, func(stored *Session) error {
+		architect := stored.Agents["architect"]
+		architect.PaneID = tmuxSession.RightPaneID
+		stored.Agents["architect"] = architect
+		junior := stored.Agents["junior"]
+		junior.PaneID = juniorPane
+		stored.Agents["junior"] = junior
+		return nil
+	}); err != nil {
+		cleanup()
+		return Session{}, createSessionStepError(root, "save paired Pi state", err)
+	}
+	if err := SetAgentPaneOptions(ctx, s.Exec, session.TmuxSessionID, tmuxSession.RightPaneID, juniorPane); err != nil {
+		cleanup()
+		return Session{}, createSessionStepError(root, "configure paired Pi panes", err)
 	}
 	// Best effort: the runner records failures in command diagnostics, and
 	// consumers fall back to pane discovery when the options are missing.
@@ -277,7 +301,17 @@ func (s *Service) AcknowledgeAgentAttention(ctx context.Context, id string) (Ses
 			return nil
 		}
 		now := time.Now().UTC()
-		session.AgentStatus = AgentStatusIdle
+		if len(session.Agents) > 0 {
+			for role, agent := range session.Agents {
+				if agent.Status == AgentStatusAttention {
+					agent.Status = AgentStatusIdle
+					session.Agents[role] = agent
+				}
+			}
+			session.AgentStatus = pairedAgentStatus(session.Agents)
+		} else {
+			session.AgentStatus = AgentStatusIdle
+		}
 		session.AgentStatusUpdatedAt = &now
 		return nil
 	})

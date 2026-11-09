@@ -71,6 +71,8 @@ func TestCreateSessionPublishesTmuxPaneOptions(t *testing.T) {
 						return []byte("$5\t%1\n"), nil
 					case name == "tmux" && len(args) > 0 && args[0] == "split-window":
 						return []byte("%2\n"), nil
+					case name == "tmux" && len(args) > 0 && args[0] == "new-window":
+						return []byte("%3\n"), nil
 					default:
 						t.Fatalf("unexpected Output call: %s %#v", name, args)
 						return nil, nil
@@ -78,7 +80,10 @@ func TestCreateSessionPublishesTmuxPaneOptions(t *testing.T) {
 				},
 				runFunc: func(name string, args []string) error {
 					if name == "tmux" && len(args) > 0 && args[0] == "set-option" {
-						return tc.optErr
+						if argsContain(args, TmuxOptionSessionID) {
+							return tc.optErr
+						}
+						return nil
 					}
 					t.Fatalf("unexpected Run call: %s %#v", name, args)
 					return nil

@@ -2,6 +2,7 @@ package oaktree
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	osexec "os/exec"
 	"path/filepath"
@@ -9,24 +10,57 @@ import (
 
 // PiExtensionSource is kept in the binary so Pi sessions never depend on a
 // checked-out oak-tree source tree.
-const PiExtensionSource = `import { StringEnum } from "@earendil-works/pi-ai";
+//
+//go:embed pi_office_bridge.mjs
+var piOfficeBridgeSource string
+
+var PiExtensionSource = piOfficeBridgeSource + `
+import { truncateHead } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
 export default function (pi) {
   const oak = process.env.OAK_TREE_SESSION_ID;
   const tmuxPane = process.env.TMUX_PANE;
+  const role = process.env.OAK_TREE_AGENT_ROLE;
   let registered = Boolean(oak);
+  async function switchAgent(ctx) {
+    if (!role || !tmuxPane) {
+      ctx.ui.notify("This session does not have a paired agent", "warning");
+      return;
+    }
+    const other = role === "architect" ? "junior" : "architect";
+    const option = await pi.exec("tmux", ["display-message", "-p", "-t", tmuxPane, "#{@oak_" + other + "_pane}"]);
+    const pane = option.stdout.trim();
+    if (option.code !== 0 || !pane) {
+      ctx.ui.notify("The other agent is not available", "warning");
+      return;
+    }
+    const result = await pi.exec("tmux", ["swap-pane", "-s", tmuxPane, "-t", pane]);
+    if (result.code !== 0) {
+      ctx.ui.notify("Could not switch agent tab", "error");
+      return;
+    }
+    await hook("pane_selected", { managed: true, tmux_pane: pane, agent_role: other });
+  }
+  if (role && tmuxPane) {
+    pi.registerShortcut("alt+a", {
+      description: "Switch oak-tree agent tab",
+      handler: switchAgent,
+    });
+  }
   async function hook(event, extra = {}) {
     if (!extra.managed || !registered || (!oak && !tmuxPane)) return false;
     const command = process.env.OAK_TREE_HOOK || "oak-tree";
     const args = ["hook", "agent-event", "--event", event];
     if (oak) args.push("--oak-session", oak);
+    if (role && !extra.agent_role) args.push("--agent-role", role);
     for (const [key, value] of Object.entries(extra)) {
       if (value === undefined || value === null || value === "") continue;
-      if (!["tmux_pane", "cwd", "session_id", "session_file", "todo_total", "todo_pending", "todo_in_progress", "todo_completed", "todo_json", "activity_kind", "activity_message"].includes(key)) continue;
+      if (!["tmux_pane", "cwd", "session_id", "session_file", "todo_total", "todo_pending", "todo_in_progress", "todo_completed", "todo_json", "activity_kind", "activity_message", "agent_role"].includes(key)) continue;
       args.push("--" + key.replaceAll("_", "-"), String(value));
     }
-    for (let attempt = 0; attempt < 20; attempt++) {
+    for (let attempt = 0; attempt < 100; attempt++) {
       try {
         const result = await pi.exec(command, args, { timeout: 2000 });
         if (result.code === 0) return true;
@@ -43,6 +77,8 @@ export default function (pi) {
     session_file: ctx.sessionManager.getSessionFile(),
   });
   let currentIdentity;
+  const officeQuestionBridge = createOfficeQuestionBridge(pi, () => currentIdentity);
+  let officeBridgeWarningShown = false;
   const todoSummary = (details) => {
     if (!Array.isArray(details?.tasks)) return;
     const summary = { todo_total: 0, todo_pending: 0, todo_in_progress: 0, todo_completed: 0, todo_json: "[]" };
@@ -62,12 +98,22 @@ export default function (pi) {
     if (summary) await hook("todo", { ...identity(ctx), ...summary });
   };
   async function start(ctx) {
+    if (role && ctx.hasUI) {
+      const tabs = role === "architect" ? "[ Architect ]   Junior" : "  Architect   [ Junior ]";
+      ctx.ui.setWidget("oak-agent-tabs", [tabs + "    Alt+A: switch"]);
+    }
     currentIdentity = identity(ctx);
     const wasRegistered = registered;
     registered = true;
     if (!await hook("session_start", currentIdentity)) {
       registered = wasRegistered;
       return false;
+    }
+    try { await officeQuestionBridge.start(); } catch (_) {
+      if (!officeBridgeWarningShown && ctx.hasUI) {
+        officeBridgeWarningShown = true;
+        ctx.ui.notify("Office question bridge unavailable; answer questions in the terminal.", "warning");
+      }
     }
     let latest = { tasks: [] };
     for (const entry of ctx.sessionManager.getBranch()) {
@@ -77,6 +123,7 @@ export default function (pi) {
     await reportTodos(ctx, latest);
     registerCampfireTool();
     registerCampfireReadTool();
+    registerCoordinationTool();
     if (!pi.getAllTools().some((tool) => tool.name === "ask_user_question" || tool.name === "ask_user")) registerQuestionTool();
     return true;
   }
@@ -84,10 +131,14 @@ export default function (pi) {
     if (oak) await start(ctx);
   });
   pi.registerCommand("oak-tree", {
-    description: "Register this Pi session with the current oak-tree tmux session",
+    description: "Switch paired agents or register this Pi session with oak-tree",
     handler: async (args, ctx) => {
+      if (args.trim() === "switch") {
+        await switchAgent(ctx);
+        return;
+      }
       if (args.trim() !== "register") {
-        ctx.ui.notify("Usage: /oak-tree register", "warning");
+        ctx.ui.notify("Usage: /oak-tree switch|register", "warning");
         return;
       }
       if (!tmuxPane) {
@@ -101,6 +152,7 @@ export default function (pi) {
   pi.on("agent_start", async (_event, ctx) => { await hook("agent_start", identity(ctx)); });
   pi.on("agent_settled", async (_event, ctx) => { await hook("agent_settled", identity(ctx)); });
   pi.on("session_shutdown", async (_event, ctx) => {
+    await officeQuestionBridge.stop();
     piAskFlows.clear();
     piAskIdentity = undefined;
     await hook("session_shutdown", identity(ctx));
@@ -134,6 +186,8 @@ export default function (pi) {
     if (externalQuestion) externalQuestionHook = hook("question", externalQuestion);
   });
   pi.on("tool_execution_end", async (event, ctx) => {
+    if (registered && ctx.mode === "tui" && event.isError === true) officeQuestionBridge.recordToolFailure();
+    officeQuestionBridge.endTool(event.toolCallId);
     if (event.toolName === "todo" && !event.isError) await reportTodos(ctx, event.result?.details);
     if (event.toolName !== "ask_user_question") return;
     const questionHook = externalQuestionHook;
@@ -196,6 +250,47 @@ export default function (pi) {
         if (result.code !== 0) throw new Error(result.stderr.trim() || "Could not read Campfire");
         const messages = result.stdout.trim();
         return { content: [{ type: "text", text: messages === "[]" || !messages ? "Campfire is quiet." : messages }], details: { messages } };
+      },
+    });
+  }
+
+  function registerCoordinationTool() {
+    if (pi.getAllTools().some((tool) => tool.name === "oak_coordination")) return;
+    pi.registerTool({
+      name: "oak_coordination",
+      label: "Coordination group",
+      description: "List or manage temporary oak-tree coordination groups and explicit assignments. Output is limited to 50 KB / 2000 lines. This records relationships; use intercom to send instructions and results.",
+      promptSnippet: "Track organizer, participants, assignments, and returned results across managed sessions",
+      promptGuidelines: [
+        "Use oak_coordination list to discover exact managed session IDs before creating a group; do not guess IDs or use Pi/intercom IDs.",
+        "When coordinating work across managed sessions, use oak_coordination create with a short name and participant assignments, then send instructions through intercom including the group ID.",
+        "Use oak_coordination report for your own assignment progress and returned result; READY or an idle agent is not assignment completion.",
+        "The organizer uses oak_coordination accept after checking a returned result and close when coordination ends. Closing a group never closes sessions.",
+        "Use oak_coordination assign to add or replace an assignment, remove to release a participant, and update to rename or transfer organization to a participant. One active group per session; no nested groups.",
+      ],
+      executionMode: "sequential",
+      parameters: Type.Object({
+        action: StringEnum(["list", "create", "update", "assign", "report", "accept", "remove", "close"]),
+        group_id: Type.Optional(Type.String()),
+        name: Type.Optional(Type.String({ maxLength: 80 })),
+        organizer_id: Type.Optional(Type.String()),
+        session_id: Type.Optional(Type.String()),
+        assignments: Type.Optional(Type.Array(Type.Object({ session_id: Type.String(), task: Type.String({ maxLength: 500 }) }))),
+        task: Type.Optional(Type.String({ maxLength: 500 })),
+        status: Type.Optional(StringEnum(["pending", "working", "returned"])),
+        result: Type.Optional(Type.String({ maxLength: 1000 })),
+      }),
+      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+        if (!registered || ctx.mode !== "tui" || (!oak && !tmuxPane)) throw new Error("This session is not registered with oak-tree");
+        const command = process.env.OAK_TREE_HOOK || "oak-tree";
+        const args = ["coordination", "--request", JSON.stringify(params)];
+        if (oak) args.push("--oak-session", oak);
+        else args.push("--tmux-pane", tmuxPane);
+        const result = await pi.exec(command, args, { timeout: 5000, signal });
+        if (result.code !== 0) throw new Error(result.stderr.trim() || "Could not update coordination group");
+        const output = truncateHead(result.stdout, { maxBytes: 50 * 1024, maxLines: 2000 });
+        const text = output.content + (output.truncated ? "\n[Output truncated. Use a group-specific request to keep results smaller.]" : "");
+        return { content: [{ type: "text", text }], details: { action: params.action } };
       },
     });
   }
@@ -269,5 +364,21 @@ func PiCommand(ctx context.Context, paths Paths, sessionID string) ([]string, er
 	if err != nil {
 		return nil, fmt.Errorf("prepare Pi hook executable: %w", err)
 	}
-	return []string{"env", "OAK_TREE_SESSION_ID=" + sessionID, "OAK_TREE_HOOK=" + hook, "pi", "--append-system-prompt", piManagedCheckoutPrompt}, nil
+	return []string{"env", "OAK_TREE_SESSION_ID=" + sessionID, "OAK_TREE_STATE_DIR=" + paths.StateDir, "OAK_TREE_HOOK=" + hook, "pi", "--append-system-prompt", piManagedCheckoutPrompt}, nil
+}
+
+func PairedPiCommand(base []string, sessionID, role string) []string {
+	other := "junior"
+	model, thinking := "openai-codex/gpt-6.1-terra", "high"
+	instructions := "You are the architect. Handle routine work directly; delegate isolated or parallel tasks to the junior through pi-intercom only when doing so saves work. Give the junior a bounded task, relevant context, and clear completion criteria; do not repeat its work. Check delegated changes and results before reporting completion. For a genuinely difficult question when an expert is needed, consult the existing Agent tool using the read-only Explore agent with model openai-codex/gpt-6-astra, thinking low, inherit_context false, and max_turns 6; provide a focused self-contained question, not the full conversation. Do not consult the expert for routine checks or status. If Agent or Explore is unavailable, report that limitation; do not switch models or use another expensive fallback. Respect all user approval requirements for reviewer and implementation subagents. Delegation does not expand the user's authorization."
+	if role == "junior" {
+		other = "architect"
+		model, thinking = "openai-codex/gpt-6.1-terra", "high"
+		instructions = "You are the junior. Handle routine work independently; ask the architect focused questions over pi-intercom when genuinely unsure."
+	}
+	peer := "oak-" + sessionID + "-" + other
+	instructions += " Your paired colleague is named " + peer + ". Use pi-intercom to coordinate, and avoid editing the same files simultaneously. Both agents share the same checkout."
+	command := append([]string(nil), base[:len(base)-1]...)
+	command = append(command, piManagedCheckoutPrompt+" "+instructions, "--model", model, "--thinking", thinking, "--name", "oak-"+sessionID+"-"+role)
+	return append([]string{"env", "OAK_TREE_AGENT_ROLE=" + role}, command...)
 }

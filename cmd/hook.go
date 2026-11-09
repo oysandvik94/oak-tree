@@ -49,7 +49,7 @@ func newCampfireReadHookCommand() *cobra.Command {
 
 func newAgentEventHookCommand() *cobra.Command {
 	var quiet bool
-	var oakSession, tmuxPane, eventName, cwd, sessionID, sessionFile, todoJSON, activityKind, activityMessage, legacyAgent string
+	var oakSession, tmuxPane, eventName, cwd, sessionID, sessionFile, todoJSON, activityKind, activityMessage, legacyAgent, agentRole string
 	var todoTotal, todoPending, todoInProgress, todoCompleted int
 	cmd := &cobra.Command{
 		Use:          "agent-event",
@@ -68,7 +68,7 @@ func newAgentEventHookCommand() *cobra.Command {
 				event, err = oaktree.ParseAgentEvent(os.Stdin)
 			} else {
 				event.OakSessionID, event.TmuxPaneID, event.Event, event.Cwd, event.SessionID, event.SessionFile = oakSession, tmuxPane, eventName, cwd, sessionID, sessionFile
-				event.ActivityKind, event.ActivityMessage = activityKind, activityMessage
+				event.ActivityKind, event.ActivityMessage, event.AgentRole = activityKind, activityMessage, agentRole
 				if eventName == "todo" {
 					event.Todo = &oaktree.TodoSummary{Total: todoTotal, Pending: todoPending, InProgress: todoInProgress, Completed: todoCompleted}
 					if todoJSON != "" {
@@ -95,6 +95,7 @@ func newAgentEventHookCommand() *cobra.Command {
 	cmd.Flags().StringVar(&cwd, "cwd", "", "Pi working directory")
 	cmd.Flags().StringVar(&sessionID, "session-id", "", "Pi session id")
 	cmd.Flags().StringVar(&sessionFile, "session-file", "", "Pi session file")
+	cmd.Flags().StringVar(&agentRole, "agent-role", "", "Paired agent role")
 	cmd.Flags().StringVar(&legacyAgent, "agent", "", "Deprecated compatibility flag")
 	_ = cmd.Flags().MarkHidden("agent")
 	cmd.Flags().IntVar(&todoTotal, "todo-total", 0, "Visible todo count")

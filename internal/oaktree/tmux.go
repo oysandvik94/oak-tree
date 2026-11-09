@@ -118,7 +118,7 @@ func AttachSessionArgs(target string) []string {
 }
 
 func DisplayPopupArgs(binary string) []string {
-	return []string{"display-popup", "-E", "-w", "90%", "-h", "90%", "--", binary}
+	return []string{"display-popup", "-E", "-w", "95%", "-h", "95%", "--", binary}
 }
 
 func CreateTmuxSession(ctx context.Context, runner Runner, sessionName, workdir string) (TmuxSession, error) {
@@ -153,6 +153,27 @@ func CreateTmuxSessionWithCommand(ctx context.Context, runner Runner, sessionNam
 		LeftPaneID:  leftPaneID,
 		RightPaneID: strings.TrimSpace(string(rightID)),
 	}, nil
+}
+
+func CreateAgentWindow(ctx context.Context, runner Runner, sessionName, workdir string, command []string) (string, error) {
+	args := []string{"new-window", "-d", "-P", "-F", "#{pane_id}", "-t", sessionName, "-n", "oak-junior", "-c", workdir}
+	args = append(args, command...)
+	output, err := runner.Output(ctx, "tmux", args...)
+	if err != nil {
+		return "", err
+	}
+	pane := strings.TrimSpace(string(output))
+	if pane == "" {
+		return "", fmt.Errorf("tmux did not return the junior pane id")
+	}
+	return pane, nil
+}
+
+func SetAgentPaneOptions(ctx context.Context, runner Runner, target, architect, junior string) error {
+	args := SetSessionOptionArgs(target, "@oak_architect_pane", architect)
+	args = append(args, ";")
+	args = append(args, SetSessionOptionArgs(target, "@oak_junior_pane", junior)...)
+	return runner.Run(ctx, "tmux", args...)
 }
 
 func parseTmuxSessionOutput(output []byte) (string, string, error) {

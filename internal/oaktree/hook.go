@@ -18,6 +18,7 @@ const (
 
 type AgentEvent struct {
 	OakSessionID    string       `json:"oak_session_id"`
+	AgentRole       string       `json:"agent_role,omitempty"`
 	TmuxPaneID      string       `json:"tmux_pane_id,omitempty"`
 	Event           string       `json:"event"`
 	Cwd             string       `json:"cwd,omitempty"`
@@ -78,6 +79,12 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 	if session.RightPaneID == "" {
 		return errors.New("oak-tree session is still starting")
 	}
+	if event.AgentRole != "" {
+		return s.handlePairedAgentEvent(ctx, session, event)
+	}
+	if len(session.Agents) > 0 {
+		return errors.New("paired agent event missing role")
+	}
 	if event.Event == "todo" {
 		if err := validateTodoSummary(event.Todo); err != nil {
 			return err
@@ -116,7 +123,10 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 			if event.Event == "session_shutdown" {
 				stored.AgentStatus = AgentStatusIdle
 			}
-		case "agent_start", "question_answered":
+		case "agent_start":
+			stored.AgentStatus = AgentStatusWorking
+			unparkSession(stored)
+		case "question_answered":
 			stored.AgentStatus = AgentStatusWorking
 		case "question":
 			stored.AgentStatus = AgentStatusQuestion
@@ -151,6 +161,138 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 		_ = s.Exec.Run(ctx, "notify-send", "Pi finished working", agentQuestionNotificationBody(*session))
 	}
 	return nil
+}
+
+func (s *Service) handlePairedAgentEvent(ctx context.Context, session *Session, event AgentEvent) error {
+	if event.AgentRole != "architect" && event.AgentRole != "junior" {
+		return errors.New("unknown paired agent role")
+	}
+	if event.Event == "todo" {
+		if err := validateTodoSummary(event.Todo); err != nil {
+			return err
+		}
+	}
+	if event.Event == "campfire" {
+		if err := validateCampfireMessage(event.ActivityKind, event.ActivityMessage); err != nil {
+			return err
+		}
+		event.ActivityMessage = strings.TrimSpace(event.ActivityMessage)
+	}
+	now := time.Now().UTC()
+	var previous, current AgentStatus
+	var selectedPane string
+	err := s.Store.UpdateSession(session.ID, func(stored *Session) error {
+		agent, ok := stored.Agents[event.AgentRole]
+		if !ok {
+			return errors.New("paired agent is not registered")
+		}
+		previous = stored.AgentStatus
+		if event.Event == "pane_selected" {
+			if event.TmuxPaneID == "" || event.TmuxPaneID != agent.PaneID {
+				return errors.New("selected pane does not match paired agent")
+			}
+			stored.RightPaneID = event.TmuxPaneID
+			stored.AgentSessionFile = agent.SessionFile
+			selectedPane = event.TmuxPaneID
+			current = stored.AgentStatus
+			return nil
+		}
+		if event.TmuxPaneID != "" {
+			agent.PaneID = event.TmuxPaneID
+		}
+		if event.SessionID != "" {
+			agent.SessionID = event.SessionID
+			stored.AgentSessionIDs = dedupeStrings(append(stored.AgentSessionIDs, event.SessionID))
+		}
+		if event.SessionFile != "" {
+			agent.SessionFile = event.SessionFile
+			if agent.PaneID == stored.RightPaneID {
+				stored.AgentSessionFile = event.SessionFile
+			}
+		}
+		stored.LastHookAt = &now
+		if event.Cwd != "" {
+			stored.LastHookCwd = event.Cwd
+		}
+		switch event.Event {
+		case "session_start":
+		case "session_shutdown":
+			agent.Status = AgentStatusIdle
+		case "agent_start", "question_answered":
+			agent.Status = AgentStatusWorking
+			if event.Event == "agent_start" {
+				unparkSession(stored)
+			}
+		case "question":
+			agent.Status = AgentStatusQuestion
+		case "agent_settled":
+			agent.Status = AgentStatusAttention
+		case "todo":
+			agent.Todo = event.Todo
+		case "campfire":
+		default:
+			return fmt.Errorf("unknown agent event %q", event.Event)
+		}
+		stored.Agents[event.AgentRole] = agent
+		stored.AgentStatus = pairedAgentStatus(stored.Agents)
+		stored.Todo = pairedAgentTodos(stored.Agents)
+		if event.Event != "todo" && event.Event != "campfire" {
+			stored.AgentStatusUpdatedAt = &now
+		}
+		current = stored.AgentStatus
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if selectedPane != "" {
+		_ = SetOakSessionOptions(ctx, s.Exec, session.TmuxSessionID, session.ID, session.LeftPaneID, selectedPane)
+	}
+	if event.Event == "campfire" {
+		return s.appendCampfire(*session, event.ActivityKind, event.ActivityMessage)
+	}
+	if current == AgentStatusQuestion && previous != AgentStatusQuestion {
+		_ = s.Exec.Run(ctx, "notify-send", "Pi question waiting", agentQuestionNotificationBody(*session))
+	} else if current == AgentStatusAttention && previous == AgentStatusWorking {
+		_ = s.Exec.Run(ctx, "notify-send", "Pi finished working", agentQuestionNotificationBody(*session))
+	}
+	return nil
+}
+
+func pairedAgentStatus(agents map[string]PairedAgent) AgentStatus {
+	for _, status := range []AgentStatus{AgentStatusQuestion, AgentStatusWorking, AgentStatusAttention, AgentStatusIdle} {
+		for _, agent := range agents {
+			if agent.Status == status {
+				return status
+			}
+		}
+	}
+	return AgentStatusUnknown
+}
+
+func pairedAgentTodos(agents map[string]PairedAgent) *TodoSummary {
+	var combined *TodoSummary
+	for _, role := range []string{"architect", "junior"} {
+		if todo := agents[role].Todo; todo != nil {
+			if combined == nil {
+				combined = &TodoSummary{}
+			}
+			combined.Total += todo.Total
+			combined.Pending += todo.Pending
+			combined.InProgress += todo.InProgress
+			combined.Completed += todo.Completed
+			combined.Tasks = append(combined.Tasks, todo.Tasks...)
+		}
+	}
+	return combined
+}
+
+func unparkSession(session *Session) {
+	if session.Tag != SessionTagWaitingReview && session.Tag != SessionTagBlocked {
+		return
+	}
+	session.Tag = SessionTagNone
+	session.TagUpdatedAt = nil
 }
 
 func (s *Service) appendCampfire(session Session, kind, message string) error {

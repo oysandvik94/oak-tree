@@ -13,7 +13,7 @@ It is built for the workflow where each AI work session gets:
 - one agent pane running Pi
 - optionally, one Git worktree for a branch
 
-The dashboard is meant to be opened in a tmux popup.
+The dashboard is meant to be opened in a tmux popup, using 95% of the terminal width and height.
 
 ## Requirements
 
@@ -119,9 +119,12 @@ h / left   move to previous kanban column
 l / right  move to next kanban column
 enter      switch/attach to selected tmux session
 v          toggle table/kanban view
+f          open the local browser office
 n          create session
 t          set session status
 e          edit selected session note
+g          create/open a coordination group
+space      fold/show grouped cards in kanban; expand todos in table
 x          close selected session
 o          open cached PR for selected session
 p          refresh PR for selected session
@@ -129,6 +132,18 @@ q          quit
 ```
 
 When closing, press `y` to confirm. If the dashboard popup is running from the session being closed, oak-tree switches the tmux client to a nearby remaining session before killing it. Kanban view groups sessions into `QUESTION`, `WORKING`, `READY`, `REVIEW`, and `BLOCKED` columns while keeping the same selection and actions. The last selected view is restored the next time the dashboard opens.
+
+## Browser Office
+
+Press `f` in the dashboard or run:
+
+```sh
+oak-tree office
+```
+
+The local browser office shows your agents in three connected pixel-art rooms. All agents follow their session's dashboard state: working sessions use the work room, ready and question sessions use the central meeting room, and review or blocked sessions use the break room. When a coordination group organizer is parked for review or blocked, the whole group uses the break room; matching pennants and scarves mark its members. Questions remain answerable there. Walking and speech bubbles reflect real state and task/Campfire activity. Double-click a character to open its session in Hyprland when its tmux client and terminal window are unambiguous. Drag characters, use arrow keys to move the selected agent, scroll to zoom, or shift-drag to pan. Movement is cosmetic and never interrupts their work.
+
+The office needs a browser and `xdg-open`, not a special terminal, npm, or Python. Its authenticated server binds only to loopback, reuses a private runtime record, and stops after thirty minutes without activity. Click a supported pi-ask question bubble to answer from the browser. Existing Pi sessions need the updated managed extension and an idle `/reload`. Animation and question delivery add no background AI calls or prompt overhead; answers use Pi's normal conversation flow. Keep the terminal dashboard for session management. See [Agent Office](docs/session-lifecycle.md#agent-office) for controls and lifecycle details.
 
 ## Session Status
 
@@ -140,7 +155,13 @@ WAITING REVIEW
 BLOCKED
 ```
 
-Sessions marked `WAITING REVIEW` or `BLOCKED` move into separate parked sections below active sessions and are excluded from the active count. The manual tag overrides the current agent state until changed back to `ACTIVE`. Press `e` to open the selected session's note popup, where an empty note clears it; noted kanban cards show a highlighted `✎` icon.
+Sessions marked `WAITING REVIEW` or `BLOCKED` move into separate parked sections below active sessions and are excluded from the active count. The manual tag overrides the current agent state until changed back to `ACTIVE`. When Pi starts working in a parked session, whether from a typed prompt or an extension such as pi-intercom, the session changes back to `ACTIVE` automatically. Press `e` to open the selected session's note popup, where an empty note clears it; noted kanban cards show a highlighted `✎` icon.
+
+## Coordination Groups
+
+Press `g` to group a shared change under the selected organizer session, or to inspect an existing group. Kanban folds participant cards into the organizer card while retaining live counts and selectable QUESTION shortcuts. Press `space` to show or fold the participants. The on-demand group dialog supports assignments, returned results, acceptance, participant changes, and closing the group without closing sessions.
+
+Managed Pi sessions receive `oak_coordination` to create and update the same groups. Assignment progress is explicit and separate from live agent status; agents still use intercom to send instructions and results. See [Coordination groups](docs/coordination.md) for commands, lifecycle, and persistence.
 
 ## Agent Status
 

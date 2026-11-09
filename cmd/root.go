@@ -27,7 +27,7 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.AddCommand(newNewCommand(), newCloseCommand(), newHookCommand(), newPopupCommand())
+	rootCmd.AddCommand(newNewCommand(), newCloseCommand(), newHookCommand(), newPopupCommand(), newCoordinationCommand(), newOfficeCommand())
 }
 
 func newService() (*oaktree.Service, error) {
