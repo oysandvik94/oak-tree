@@ -125,13 +125,14 @@ The gym shows one character per recorded agent, including separate architect and
 
 Group members share a colored armband, and the roster shows the group name. This affects only the gym, not kanban status or counts. Status labels change immediately; movement to the new zone is illustrative and never delays a question. The inspector includes persisted role tasks and cached session PR/CI metadata; it does not fetch fresh GitHub state. The roster identifies each agent by project, branch and role, with a short session ID when separate sessions share a project and branch. Root sessions are labeled explicitly. On narrow browser windows, the roster and activity feed stack below the scene.
 
-Only the hovered agent (or the selected agent when none is hovered) shows a floating label and activity bubble. The activity sidebar retains messages for all agents.
+Only the hovered agent (or the selected agent when none is hovered) shows a floating label and activity bubble. Clicking empty gym space or pressing `escape` with the scene focused clears selection and hides the inspector; live refreshes keep the agent deselected until you select one again. The activity sidebar retains messages for all agents.
 
 Bubbles and the inspector show recorded in-progress tasks, Campfire activity from the last ten minutes, or a status fallback. Campfire posts are recorded per session, not per paired agent, so the inspector labels them `Campfire update`. The browser refreshes this data without making AI calls. A disconnected view is explicitly marked; it does not invent new activity.
 
 | Control | Action |
 | --- | --- |
 | Click a character or roster entry | Select the agent and show its activity |
+| Click empty gym space, or scene-focused `escape` | Deselect the agent and hide the inspector |
 | Double-click a character | Switch to its session and focus the terminal window in Hyprland |
 | Left mouse drag | Orbit the 3D camera |
 | `space`, with the scene focused | Pause or resume illustrative motion |

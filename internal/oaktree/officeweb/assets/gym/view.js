@@ -216,7 +216,7 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
   }
   function pointerLeave(){hovered=null;pointer=null;dirty=true;}
   function pointerDown(event){pointer={x:event.clientX,y:event.clientY,id:event.pointerId};}
-  function pointerUp(event){if(pointer&&event.pointerId===pointer.id&&Math.hypot(event.clientX-pointer.x,event.clientY-pointer.y)<5&&event.button===0){const id=hit(event);if(id)onSelect(id,false);}pointer=null;}
+  function pointerUp(event){if(pointer&&event.pointerId===pointer.id&&Math.hypot(event.clientX-pointer.x,event.clientY-pointer.y)<5&&event.button===0)onSelect(hit(event),false);pointer=null;}
   function doubleClick(event){if(event.button===0){const id=hit(event);if(id)onOpen(id);}}
   function stopCameraTransition(){cameraGoal=null;fitted=false;}
   function contextLost(event){event.preventDefault();lostContext=true;onError('3D rendering stopped. Reload this page to restore it; your agents are still available in the list.');}

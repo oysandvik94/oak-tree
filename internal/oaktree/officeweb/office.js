@@ -7,7 +7,8 @@ const canvas = $("office"), stage = $("stage");
 const actors = new Map(), rosterRows = new Map(), speechNodes = new Map();
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const sourceNames = {task:"CURRENT TASK", session:"CAMPFIRE UPDATE", status:"AGENT STATUS"};
-let selectedID = null, focusPending = false, paused = reducedMotion.matches;
+// Undefined allows automatic selection; null preserves an explicit deselection.
+let selectedID, focusPending = false, paused = reducedMotion.matches;
 let connected = false, polling = false, pollTimer, view = null, renderingError = "";
 let lastRosterSignature = "", orderedAgents = [], sessionSuffixes = new Map();
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -301,7 +302,7 @@ function applyState(payload) {
   }
   const priority = {question:0, blocked:1, working:2, review:3, ready:4, unknown:5};
   orderedAgents = [...actors.values()].sort((a,b) => priority[agentState(a.data)]-priority[agentState(b.data)] || a.data.project.localeCompare(b.data.project) || a.data.id.localeCompare(b.data.id));
-  if (!actors.has(selectedID)) selectedID = orderedAgents[0]?.data.id || null;
+  if (selectedID !== null && !actors.has(selectedID)) selectedID = orderedAgents[0]?.data.id;
   view?.sync([...incoming.values()]);
   updateRoster(); updateInspector();
   chatEntries = Array.isArray(payload.history) ? payload.history : [];
@@ -330,7 +331,7 @@ function renderTasksAndPR(data) {
   }
 }
 function selectActor(id, focus=false) {
-  if (!actors.has(id)) return;
+  if (id !== null && !actors.has(id)) return;
   selectedID=id;updateInspector();view?.select(id,focus);
   if(focus)canvas.focus({preventScroll:true});
 }
@@ -370,6 +371,7 @@ $('session-open').addEventListener('click',()=>openSession());
 canvas.addEventListener('keydown',event=>{
   if(event.ctrlKey||event.metaKey||event.altKey)return;
   if(event.key.toLowerCase()==='f'){event.preventDefault();view?.focusGym();}
+  else if(event.key==='Escape'){event.preventDefault();selectActor(null);}
   else if(event.key==='Enter'){event.preventDefault();const data=actors.get(selectedID)?.data;if(data?.questions?.length)questions.open(data);else openSession();}
   else if(event.key===' '){event.preventDefault();paused=!paused;view?.setPaused(paused);}
 });
