@@ -11,7 +11,7 @@ import (
 
 func TestOfficeGymAssets(t *testing.T) {
 	handler := officeHandler(NewStore(t.TempDir()), 4321, "token", nil)
-	for _, path := range []string{"/assets/gym/view.js", "/assets/gym/art.js", "/assets/gym/state.js", "/assets/gym/font.js", "/assets/gym/lighting.js", "/assets/gym/vendor/three.module.js", "/assets/gym/vendor/OrbitControls.js", "/assets/gym/vendor/RoomEnvironment.js"} {
+	for _, path := range []string{"/assets/gym/view.js", "/assets/gym/art.js", "/assets/gym/state.js", "/assets/gym/motion.js", "/assets/gym/font.js", "/assets/gym/lighting.js", "/assets/gym/vendor/three.module.js", "/assets/gym/vendor/OrbitControls.js", "/assets/gym/vendor/RoomEnvironment.js"} {
 		t.Run(path, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:4321"+path, nil)
 			w := httptest.NewRecorder()
@@ -44,15 +44,19 @@ assert(agentState({status:'unknown',sessionState:'working'}) === 'unknown', 'unk
 const capacity={working:30,question:15,ready:24,review:12,blocked:9};
 const layout=layoutFor(capacity);
 for (const state of Object.keys(capacity)) {
- const room=layout[state], seen=new Set();
+ const room=layout[state], seen=new Set(), stations=new Set();
  for(let i=0;i<capacity[state];i++) {
   const p=slotFor(layout,state,i), key=JSON.stringify(p);
   assert(!seen.has(key),'duplicate slot');seen.add(key);
   assert(p.x>room.x-room.width/2 && p.x<room.x+room.width/2 && p.z>room.back && p.z<room.front,'slot outside room');
+  const station=stationFor(layout,state,i), point=station.position, stationKey=JSON.stringify(point);
+  assert(!stations.has(stationKey),'duplicate furniture station');stations.add(stationKey);
+  assert(point.x>room.x-room.width/2 && point.x<room.x+room.width/2 && point.z>room.back && point.z<room.front,'station outside room');
+  assert(station.kind===(state==='ready'&&i<2?'bench':state==='review'&&i<2?'desk':'floor'),'incorrect furniture assignment');
  }
 }
 const a=slotFor(layout,'working',0),b=slotFor(layout,'ready',0);
-const path=routeTo(a,b,layout.corridor,false);
+const path=routeTo(a,b,layout.corridor);
 assert(path[0].z===layout.corridor && path[path.length-1]===b,'transition bypasses corridor');
 assert(zones.length===5,'unexpected extra zones');
 assert(hash('stable-id')===hash('stable-id'),'identity unstable');
@@ -62,6 +66,48 @@ assert(hash('stable-id')===hash('stable-id'),'identity unstable');
 	command := exec.CommandContext(ctx, node, "--input-type=module", "-e", script)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("gym placement: %v\n%s", err, output)
+	}
+}
+
+func TestOfficeGymMotion(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	source, err := officeAssets.ReadFile("officeweb/assets/gym/motion.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(source) + `
+const assert = (condition, message) => { if (!condition) throw new Error(message); };
+for (const state of ['working','question','ready','review','blocked','unknown']) {
+ const observed=new Set();
+ for(let identity=0;identity<12;identity++)for(let time=0;time<180;time++) {
+  const pose=gymPose(state,identity,time);
+  observed.add(pose.routine);
+  for(const value of Object.values(pose))if(typeof value==='number')assert(Number.isFinite(value),'non-finite pose');
+  assert(Math.abs(pose.offsetX)<=.45,'pacing leaves its floor slot');
+  assert(pose.bodyY>=-.35,'body sinks through the floor');
+  assert(gymPose(state,identity,time,{still:true}).offsetX===0,'paused actor wanders');
+ }
+ assert(observed.size>=2,'state lacks varied routines');
+}
+for(let time=0;time<120;time++) {
+ const pose=gymPose('ready',42,time,{seated:true});
+ assert(pose.leftHip===-Math.PI/2&&pose.rightHip===-Math.PI/2,'seated thighs are not bent');
+ assert(pose.leftKnee===Math.PI/2&&pose.rightKnee===Math.PI/2,'seated knees are not bent');
+ assert(pose.offsetX===0,'seated actor wanders off the bench');
+}
+assert(gymPose('question',42,10,{eventAge:1}).routine==='hand-raise','new question is not acknowledged');
+assert(gymPose('ready',42,10,{eventAge:1}).routine==='stretch','completion has no reaction');
+assert(gymPose('working',42,10,{walking:true}).routine==='walk','transition does not walk');
+assert(JSON.stringify(gymPose('working',42,10))===JSON.stringify(gymPose('working',42,10)),'animation is nondeterministic');
+`
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, node, "--input-type=module", "-e", script)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("gym motion: %v\n%s", err, output)
 	}
 }
 

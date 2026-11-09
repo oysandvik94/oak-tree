@@ -3,7 +3,8 @@ import {OrbitControls} from './vendor/OrbitControls.js';
 import {RoomEnvironment} from './vendor/RoomEnvironment.js';
 import {createGymArt} from './art.js';
 import {daylightAt} from './lighting.js';
-import {zones, agentState, hash, layoutFor, slotFor, routeTo} from './state.js';
+import {gymPose, applyGymPose} from './motion.js';
+import {zones, agentState, hash, layoutFor, stationFor, routeTo} from './state.js';
 
 export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame, onError, reducedMotion}) {
   const renderer = new T.WebGLRenderer({canvas, antialias: true, powerPreference: 'high-performance'});
@@ -70,21 +71,20 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
     const bottom = state === 'ready' || state === 'review';
     for(let x=room.x-room.width/2+.5;x<room.x+room.width/2;x++) for(let z=room.back+.5;z<room.front;z++) box(.98,.07,.98,x,-.02,z,bottom?wood:rubber,root);
     for(const x of [room.x-room.width/2,room.x+room.width/2]) box(.1,.12,room.depth,x,.02,room.z,woodLight,root);
-    const decorZ = bottom ? room.front-.7 : room.back+.7;
+    const decorZ = state === 'ready' ? room.front-1.1 : bottom ? room.front-.7 : room.back+.7;
     const color = zones.find(zone=>zone.id===state).color;
     // Low furniture stays out of the straight approach columns from the central aisle.
     if(state==='ready') {
-      box(3.2,.38,.72,room.x,.4,decorZ-.04,cloth,root);
-      box(3.6,.55,.16,room.x,.75,decorZ+.4,cloth,root);
-      for(const x of [room.x-1.7,room.x+1.7]) box(.2,.42,.72,x,.63,decorZ-.04,cloth,root);
-      towel(room.x+1,.63,decorZ,.55,root);
+      box(3.2,.26,.72,room.x,.3,decorZ-.04,cloth,root);
+      box(3.6,.55,.16,room.x,.68,decorZ-.4,cloth,root);
+      for(const x of [room.x-1.7,room.x+1.7]) box(.2,.36,.72,x,.52,decorZ-.04,cloth,root);
+      towel(room.x+1.65,.72,decorZ,.45,root);
       box(.8,.5,.7,room.x-2.4,.25,decorZ,woodLight,root);
       art.bottle(room.x-2.4,.5,decorZ,root);
     } else if(state==='review') {
       box(2.6,.14,.75,room.x,.85,decorZ,woodLight,root);
       for(const x of [room.x-1,room.x+1]) box(.1,.8,.55,x,.4,decorZ,iron,root);
-      box(.08,.75,.08,room.x,1.25,decorZ,iron,root);
-      decal('REVIEW','CHECK THE WORK',room.x,1.7,decorZ-.1,1.9,.9,{parent:root,font:14,small:7});
+      decal('REVIEW','CHECK THE WORK',room.x,1.08,decorZ+.4,1.3,.4,{parent:root,font:12,small:6});
       for(let i=0;i<3;i++) box(.55,.025,.35,room.x-.8,.94+i*.03,decorZ,ivory,root);
     } else if(state==='question') {
       box(3.1,1.6,.1,room.x,2,decorZ,woodLight,root);
@@ -140,17 +140,33 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
     updateLighting(true);
     extent=Math.max(12,(maxZ-minZ)*.8);resize();
   }
-  function makeActor(data, position) {
-    const model=art.actor(hash(data.id));
+  function makeActor(data, station) {
+    const identity=hash(data.id), position=station.position;
+    const model=art.actor(identity);
     const root=model.root;root.scale.setScalar(.85);root.position.set(position.x,.08,position.z);
     root.userData.agentId=data.id; world.add(root);
     const marker=art.box(.18,.18,.18,0,2.8,0,art.mat('#9bcc9c'),root);
     const selection=new T.Group();root.add(selection);
     for(const side of [-1,1]) {art.box(.9,.025,.035,0,0,side*.5,art.gold,selection);art.box(.035,.025,1,side*.47,0,0,art.gold,selection);}
-    const band=art.box(.27,.075,.38,.43,1.58,0,art.mat('#ffffff'),root);
+    const band=art.box(.27,.075,.38,0,-.07,0,art.mat('#ffffff'),model.rightArm.shoulder);
     const label=document.createElement('button');label.type='button';label.className='gym-agent-label';label.hidden=true;label.dataset.overlayAgent=data.id;
     label.addEventListener('click',()=>onSelect(data.id,true));label.addEventListener('dblclick',()=>onOpen(data.id));labels.append(label);
-    return {...model,data,position:{...position},home:position,path:[],marker,selection,band,label,walk:0,failureBaseline:null,flinchUntil:0};
+    return {...model,data,identity,station,position:{...position},home:position,path:[],marker,selection,band,label,reactionSince:-Infinity,failureBaseline:null,flinchUntil:0};
+  }
+  function stationPath(actor, station) {
+    const path=[], room=layout.ready, front=room.front-.3;
+    let start=actor.position;
+    // Approach the sofa from its open front, never through the backrest or arms.
+    if(Math.abs(start.x-room.x)<1.9&&start.z>room.front-1.6) {
+      path.push({x:start.x,z:front},{x:room.x+(start.x<room.x?-2.2:2.2),z:front});
+      start=path[path.length-1];
+    }
+    const target=station.position;
+    if(station.kind==='bench') {
+      const approach={x:room.x+(target.x<room.x?-2.2:2.2),z:front};
+      path.push(...routeTo(start,approach,layout.corridor),{x:target.x,z:front},target);
+    } else path.push(...routeTo(start,target,layout.corridor));
+    return path;
   }
   function sync(data) {
     dirty=true;
@@ -163,11 +179,14 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
     const indexes={};
     for(const item of [...data].sort((a,b)=>a.id.localeCompare(b.id))){
       const state=agentState(item),index=indexes[state]||0;indexes[state]=index+1;
-      const destination=slotFor(layout,state,index);let actor=actors.get(item.id);
-      if(!actor){actor=makeActor(item,destination);actors.set(item.id,actor);}
+      const station=stationFor(layout,state,index),destination=station.position;let actor=actors.get(item.id);
+      if(!actor){actor=makeActor(item,station);actors.set(item.id,actor);}
       const previousState=agentState(actor.data);
-      if(Math.hypot(actor.home.x-destination.x,actor.home.z-destination.z)>.01){actor.path=routeTo(actor.position,destination,layout.corridor,previousState===state);actor.home=destination;}
-      actor.data=item;actor.state=state;
+      if(Math.hypot(actor.home.x-destination.x,actor.home.z-destination.z)>.01||previousState!==state) {
+        actor.path=stationPath(actor,station);actor.home=destination;
+      }
+      if(previousState!==state)actor.reactionSince=time;
+      actor.station=station;actor.data=item;actor.state=state;
       if(paused){actor.position={...destination};actor.path=[];}
       actor.marker.material=art.mat(zones.find(z=>z.id===state)?.color||'#a5a5a5');
       actor.selection.visible=item.id===selected;
@@ -227,29 +246,40 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
   const observer=new ResizeObserver(resize);observer.observe(stage);
 
   function animateActor(actor,dt){
-    const model=actor,phase=hash(actor.data.id)%100;let walking=false;
-    if(!paused&&connected){let remaining=dt*2.2;while(actor.path.length&&remaining>0){const p=actor.path[0],dx=p.x-actor.position.x,dz=p.z-actor.position.z,d=Math.hypot(dx,dz);walking=true;actor.root.rotation.y=Math.atan2(dx,dz);if(d<=remaining){actor.position={...p};actor.path.shift();remaining-=d;}else{actor.position.x+=dx/d*remaining;actor.position.z+=dz/d*remaining;remaining=0;}}}
-    if(!walking)actor.root.rotation.y=0;
+    const active=!paused&&connected;
+    let walking=false, facing=actor.root.rotation.y;
+    if(active) {
+      let remaining=dt*2.2;
+      while(actor.path.length&&remaining>0) {
+        const p=actor.path[0],dx=p.x-actor.position.x,dz=p.z-actor.position.z,d=Math.hypot(dx,dz);
+        walking=true;facing=Math.atan2(dx,dz);
+        if(d<=remaining){actor.position={...p};actor.path.shift();remaining-=d;}
+        else{actor.position.x+=dx/d*remaining;actor.position.z+=dz/d*remaining;remaining=0;}
+      }
+    }
+    if(walking&&!actor.path.length&&actor.state==='ready')actor.reactionSince=time;
+    const pose=gymPose(actor.state,actor.identity,time,{
+      seated:actor.station.kind==='bench'&&!actor.path.length,
+      desk:actor.station.kind==='desk'&&!actor.path.length,
+      walking,still:paused,eventAge:time-actor.reactionSince,
+    });
+    actor.routine=pose.routine;actor.localWalking=active&&!walking&&pose.stride>.1;
+    if(!walking&&!actor.path.length&&active)actor.position={x:actor.home.x+pose.offsetX,z:actor.home.z};
+    if(active) {
+      const target=walking?facing:pose.facing;
+      const turn=Math.atan2(Math.sin(target-actor.root.rotation.y),Math.cos(target-actor.root.rotation.y));
+      actor.root.rotation.y+=turn*(1-Math.exp(-dt*8));
+    } else if(paused)actor.root.rotation.y=0;
     actor.root.position.set(actor.position.x,.08,actor.position.z);
-    const t=time+phase;
-    model.leftLeg.rotation.x=model.rightLeg.rotation.x=0;
-    model.leftArm.shoulder.rotation.set(0,0,.045);model.rightArm.shoulder.rotation.set(0,0,-.045);
-    model.leftArm.elbow.rotation.x=model.rightArm.elbow.rotation.x=-.15;
-    model.weights.forEach(weight=>weight.visible=actor.state==='working'&&!walking);
-    if(walking){model.leftLeg.rotation.x=Math.sin(t*8)*.3;model.rightLeg.rotation.x=-Math.sin(t*8)*.3;model.leftArm.shoulder.rotation.x=-Math.sin(t*8)*.4;model.rightArm.shoulder.rotation.x=Math.sin(t*8)*.4;}
-    else if(actor.state==='working'){model.leftArm.elbow.rotation.x=-.15-1.7*(.5+.5*Math.sin(t*1.7));model.rightArm.elbow.rotation.x=-.15-1.7*(.5+.5*Math.sin(t*1.7+Math.PI));}
-    else if(actor.state==='question'){model.rightArm.shoulder.rotation.z=2.8+Math.sin(t*2)*.1;model.rightArm.elbow.rotation.x=-.4;}
-    else if(actor.state==='review'){model.leftArm.elbow.rotation.x=-1.5;model.rightArm.elbow.rotation.x=-1.2;}
-    else if(actor.state==='ready'){model.leftArm.shoulder.rotation.z=.25+Math.sin(t*.6)*.08;model.rightArm.shoulder.rotation.z=-.25-Math.sin(t*.6)*.08;}
-    else if(actor.state==='blocked'){model.rightArm.elbow.rotation.x=-1.4;}
-    actor.root.rotation.z=actor.flinchUntil>time?Math.sin(t*15)*.06:0;
+    applyGymPose(actor,pose,active?1-Math.exp(-dt*10):1);
+    actor.root.rotation.z=actor.flinchUntil>time?Math.sin((time+actor.identity)*15)*.06:0;
   }
   function frame(now){if(disposed)return;frameID=requestAnimationFrame(frame);const dt=Math.min((now-lastTime)/1000,.06);lastTime=now;if(document.hidden||lostContext)return;
     updateLighting();
     controls.update();
     if((paused||!connected||!actors.size)&&!dirty&&!cameraGoal){onFrame(now);return;}
     if(!paused&&connected)time+=dt;
-    actors.forEach(a=>animateActor(a,dt));
+    if(connected||paused)actors.forEach(a=>animateActor(a,dt));
     if(cameraGoal){const k=1-Math.exp(-dt*6);camera.position.lerp(cameraGoal.position,k);controls.target.lerp(cameraGoal.target,k);camera.zoom=T.MathUtils.lerp(camera.zoom,cameraGoal.zoom,k);camera.updateProjectionMatrix();if(camera.position.distanceTo(cameraGoal.position)<.01&&Math.abs(camera.zoom-cameraGoal.zoom)<.005)cameraGoal=null;}
     camera.lookAt(controls.target);renderer.render(scene,camera);
     actors.forEach(actor=>{const p=project(actor.data.id,2.6);actor.label.hidden=!p.visible||actor.data.id!==overlayAgent();actor.label.style.left=`${p.x}px`;actor.label.style.top=`${p.y}px`;});
@@ -260,7 +290,7 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
     sync,select,project,focusGym,overlayAgent,
     setConnected(value){connected=value;dirty=true;},
     setPaused(value){dirty=true;paused=value;if(value)actors.forEach(a=>{a.position={...a.home};a.path=[];});},
-    getInfo(){return {agents:actors.size,zones:zones.length,daylight,capacity:{...capacity},positions:Object.fromEntries([...actors].map(([id,a])=>[id,{...a.position,state:a.state,moving:a.path.length>0,screen:project(id,1.1)}])),drawCalls:renderer.info.render.calls};},
+    getInfo(){return {agents:actors.size,zones:zones.length,daylight,animationTime:time,capacity:{...capacity},positions:Object.fromEntries([...actors].map(([id,a])=>[id,{...a.position,state:a.state,routine:a.routine,station:a.station.kind,moving:a.path.length>0||Boolean(a.localWalking),screen:project(id,1.1)}])),drawCalls:renderer.info.render.calls};},
     dispose(){stage.removeEventListener('pointermove',pointerMove);stage.removeEventListener('pointerleave',pointerLeave);disposed=true;cancelAnimationFrame(frameID);observer.disconnect();controls.dispose();canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('dblclick',doubleClick);canvas.removeEventListener('webglcontextlost',contextLost);disposeTree(world);envMap.dispose();renderer.dispose();labels.replaceChildren();},
   };
 }

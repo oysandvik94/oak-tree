@@ -40,6 +40,11 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#connection').textContent(),'Live');
     assert.equal((await page.evaluate(()=>window.oakGym.getInfo())).positions['Atlas:junior'].state,'ready');
     assert.equal((await page.evaluate(()=>window.oakGym.getInfo())).positions['Sage:architect'].state,'blocked');
+    const initialMotion=await page.evaluate(()=>window.oakGym.getInfo());
+    assert.equal(initialMotion.animationTime,0,'reduced-motion preference should pause routines');
+    assert.equal(initialMotion.positions['Atlas:junior'].station,'bench');
+    assert.equal(initialMotion.positions['Fern:architect'].station,'bench');
+    assert.equal(initialMotion.positions['Moss:architect'].station,'desk');
     assert.equal(await page.locator('.agent-row').count(),8);
     assert.equal(await page.locator('.gym-agent-label:visible').count(),1,'unfocused labels should be hidden');
     assert.equal(await page.locator('.topbar,.scene-toolbar,.gym-options,#room-navigation,.scene-footer').count(),0);
@@ -126,10 +131,12 @@ const assert = require('node:assert/strict');
     await animated.waitForFunction(()=>window.oakGym.getInfo().positions['Mobile:architect'].state==='question');
     await animated.waitForFunction(({x,z})=>{const p=window.oakGym.getInfo().positions['Mobile:architect'];return Math.hypot(p.x-x,p.z-z)>.05;},before);
     await animated.locator('#office').focus();await animated.keyboard.press('Space');
+    const pausedTime=await animated.evaluate(()=>window.oakGym.getInfo().animationTime);
     for(const [time,expected] of [['2026-12-21T08:00:00+01:00',0],['2026-06-21T08:00:00+02:00',1],['2026-12-21T17:00:00+01:00',0],['2026-06-21T12:00:00+02:00',1]]){
       await animated.clock.setFixedTime(new Date(time));
       await animated.waitForFunction(expected=>Math.abs(window.oakGym.getInfo().daylight-expected)<.001,expected);
     }
+    assert.equal(await animated.evaluate(()=>window.oakGym.getInfo().animationTime),pausedTime,'paused routines advanced');
     console.log('Bergen seasonal lighting updates while animation is paused.');
     await animated.close();
     // A failed WebGL initialization must not take the functional DOM UI down with it.

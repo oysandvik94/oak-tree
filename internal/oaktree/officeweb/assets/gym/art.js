@@ -114,16 +114,25 @@ function cozyDetails(){
  const cards=group(-5.69,2.1,1.7,wallRoot);cards.rotation.y=Math.PI/2;
  for(const side of [-1,1]){box(.35,.3,.025,side*.29,0,0,ivory,cards);box(.29,.18,.015,side*.29,.02,.02,mat('#76918b'),cards);box(.19,.07,.02,side*.29,-.035,.03,mat('#64744f'),cards);box(.07,.06,.02,side*.29+.07,.065,.03,mat('#dec592'),cards);box(.035,.035,.03,side*.29,.12,.04,gold,cards);}
 }
-let athlete,leftArm,rightArm,leftLeg,rightLeg;
+let athlete,body,torso,head,leftArm,rightArm,leftLeg,rightLeg;
 let characterCloth=cloth,characterSkin=skin,characterSkinLight=skinLight,characterHair=hair;
-function makeArm(side,parent){const shoulder=group(side*.43,1.65,0,parent);box(.24,.28,.36,0,-.1,0,characterCloth,shoulder);box(.22,.3,.25,0,-.32,.015,characterSkin,shoulder);box(.12,.19,.03,side*.05,-.31,.155,characterSkinLight,shoulder);const elbow=group(0,-.49,0,shoulder);box(.19,.35,.23,0,-.15,.01,characterSkinLight,elbow);box(.2,.075,.24,0,-.31,.01,mat('#ddd2ac'),elbow);box(.21,.12,.24,0,-.41,.025,characterSkin,elbow);const weight=dumbbell(elbow,0,-.41,.09,.9);return {shoulder,elbow}}
-function makeLeg(side,parent){const hip=group(side*.21,.92,0,parent);box(.33,.37,.38,0,-.13,0,mat('#344c4b'),hip);box(.29,.32,.3,0,-.43,.015,characterSkin,hip);box(.22,.27,.25,0,-.65,0,mat('#cfccaf'),hip);box(.23,.045,.26,0,-.57,0,mat('#6c8c76'),hip);box(.29,.14,.45,0,-.83,.085,mat('#b6c1aa'),hip);box(.31,.07,.48,0,-.9,.09,mat('#ddd7bd'),hip);box(.21,.11,.2,0,-.78,.04,mat('#5d8076'),hip);for(let i=0;i<3;i++)box(.17,.02,.025,0,-.77,.12+i*.045,ivory,hip);return hip}
-function character(){athlete=group(-1,.07,1.85,dynamic);athlete.rotation.y=.15;box(.73,.6,.4,0,1.34,0,characterCloth,athlete);box(.65,.23,.37,0,.99,0,characterCloth,athlete);box(.73,.05,.41,0,1.06,0,mat('#a0ae8c'),athlete);for(const x of [-.33,.33])box(.025,.5,.025,x,1.34,.215,mat('#9eae8f'),athlete);box(.3,.18,.3,0,1.72,0,characterSkin,athlete);
- // Silhouette, face planes, nose, brows, eyes, ears and stepped swept characterHair.
- box(.59,.57,.48,0,2.02,0,characterSkinLight,athlete);box(.49,.1,.44,0,1.72,0,characterSkin,athlete);box(.065,.18,.18,-.325,2.01,0,characterSkin,athlete);box(.065,.18,.18,.325,2.01,0,characterSkin,athlete);box(.1,.1,.08,0,1.97,.265,characterSkin,athlete);for(const side of [-1,1]){box(.13,.045,.025,side*.15,2.14,.25,characterHair,athlete);box(.11,.065,.025,side*.15,2.065,.25,ivory,athlete);box(.045,.065,.03,side*.13,2.065,.265,characterHair,athlete);box(.1,.045,.025,side*.2,1.89,.25,mat('#bd8766'),athlete);}box(.18,.025,.025,0,1.82,.245,mat('#815c48'),athlete);box(.66,.16,.55,0,2.34,-.025,characterHair,athlete);box(.57,.09,.47,-.04,2.46,-.05,characterHair,athlete);box(.2,.18,.1,-.23,2.25,.23,characterHair,athlete);box(.1,.35,.42,-.29,2.21,-.08,characterHair,athlete);box(.1,.2,.43,.29,2.29,-.08,characterHair,athlete);for(let i=0;i<8;i++)box(.055,.04,.18,-.25+i*.07,2.48+Math.floor(random()*2)*.035,-.08+random()*.08,mat(i%2?'#454039':'#373534'),athlete);
- // Shirt badge built from individual pixels, not a generic robot recolour.
- const glyph=['011000110','100101001','100101111','100101001','011001001'];glyph.forEach((row,y)=>[...row].forEach((v,x)=>{if(v==='1')box(.038,.038,.016,-.16+x*.04,1.5-y*.04,.211,ivory,athlete)}));box(.32,.024,.016,0,1.23,.211,mat('#bcb48a'),athlete);
- leftArm=makeArm(-1,athlete);rightArm=makeArm(1,athlete);leftLeg=makeLeg(-1,athlete);rightLeg=makeLeg(1,athlete);
+function makeArm(side,parent){const shoulder=group(side*.43,.73,0,parent);box(.24,.28,.36,0,-.1,0,characterCloth,shoulder);box(.22,.3,.25,0,-.32,.015,characterSkin,shoulder);box(.12,.19,.03,side*.05,-.31,.155,characterSkinLight,shoulder);const elbow=group(0,-.49,0,shoulder);box(.19,.35,.23,0,-.15,.01,characterSkinLight,elbow);box(.2,.075,.24,0,-.31,.01,mat('#ddd2ac'),elbow);box(.21,.12,.24,0,-.41,.025,characterSkin,elbow);const weight=dumbbell(elbow,0,-.41,.09,.9);return {shoulder,elbow,weight}}
+function makeLeg(side,parent){
+ const hip=group(side*.21,.92,0,parent);
+ box(.33,.37,.38,0,-.13,0,mat('#344c4b'),hip);box(.29,.19,.3,0,-.32,.015,characterSkin,hip);
+ const knee=group(0,-.44,0,hip);
+ box(.27,.16,.28,0,-.05,.015,characterSkin,knee);box(.22,.27,.25,0,-.21,0,mat('#cfccaf'),knee);box(.23,.045,.26,0,-.13,0,mat('#6c8c76'),knee);box(.29,.14,.45,0,-.39,.085,mat('#b6c1aa'),knee);box(.31,.07,.48,0,-.46,.09,mat('#ddd7bd'),knee);box(.21,.11,.2,0,-.34,.04,mat('#5d8076'),knee);
+ for(let i=0;i<3;i++)box(.17,.02,.025,0,-.33,.12+i*.045,ivory,knee);
+ return {hip,knee};
+}
+function character(){
+ athlete=group(0,0,0,dynamic);body=group(0,0,0,athlete);torso=group(0,.92,0,body);
+ box(.73,.6,.4,0,.42,0,characterCloth,torso);box(.65,.23,.37,0,.07,0,characterCloth,torso);box(.73,.05,.41,0,.14,0,mat('#a0ae8c'),torso);for(const x of [-.33,.33])box(.025,.5,.025,x,.42,.215,mat('#9eae8f'),torso);box(.3,.18,.3,0,.8,0,characterSkin,torso);
+ head=group(0,.8,0,torso);
+ // Face and hair share a neck pivot; the torso and knees articulate independently.
+ box(.59,.57,.48,0,.3,0,characterSkinLight,head);box(.49,.1,.44,0,0,0,characterSkin,head);box(.065,.18,.18,-.325,.29,0,characterSkin,head);box(.065,.18,.18,.325,.29,0,characterSkin,head);box(.1,.1,.08,0,.25,.265,characterSkin,head);for(const side of [-1,1]){box(.13,.045,.025,side*.15,.42,.25,characterHair,head);box(.11,.065,.025,side*.15,.345,.25,ivory,head);box(.045,.065,.03,side*.13,.345,.265,characterHair,head);box(.1,.045,.025,side*.2,.17,.25,mat('#bd8766'),head);}box(.18,.025,.025,0,.1,.245,mat('#815c48'),head);box(.66,.16,.55,0,.62,-.025,characterHair,head);box(.57,.09,.47,-.04,.74,-.05,characterHair,head);box(.2,.18,.1,-.23,.53,.23,characterHair,head);box(.1,.35,.42,-.29,.49,-.08,characterHair,head);box(.1,.2,.43,.29,.57,-.08,characterHair,head);for(let i=0;i<8;i++)box(.055,.04,.18,-.25+i*.07,.76+Math.floor(random()*2)*.035,-.08+random()*.08,mat(i%2?'#454039':'#373534'),head);
+ const glyph=['011000110','100101001','100101111','100101001','011001001'];glyph.forEach((row,y)=>[...row].forEach((v,x)=>{if(v==='1')box(.038,.038,.016,-.16+x*.04,.58-y*.04,.211,ivory,torso)}));box(.32,.024,.016,0,.31,.211,mat('#bcb48a'),torso);
+ leftArm=makeArm(-1,torso);rightArm=makeArm(1,torso);leftLeg=makeLeg(-1,body);rightLeg=makeLeg(1,body);
 }
 // Batch static cubes by material. Thousands of hand-placed details do not need thousands of draw calls.
 function batch(root){root.updateMatrixWorld(true);const buckets=new Map(),inverse=new T.Matrix4().copy(root.matrixWorld).invert();root.traverse(o=>{if(!o.isMesh)return;if(!buckets.has(o.material))buckets.set(o.material,[]);buckets.get(o.material).push(new T.Matrix4().multiplyMatrices(inverse,o.matrixWorld));});root.clear();for(const [material,matrices] of buckets){const inst=new T.InstancedMesh(unit,material,matrices.length);matrices.forEach((m,i)=>inst.setMatrixAt(i,m));inst.castShadow=true;inst.receiveShadow=true;inst.instanceMatrix.needsUpdate=true;root.add(inst);}return [...buckets.values()].reduce((n,v)=>n+v.length,0)}
@@ -143,8 +152,14 @@ function batch(root){root.updateMatrixWorld(true);const buckets=new Map(),invers
   characterHair=mat(['#292b2d','#6b4d36','#ad956b','#44372f'][(identity>>>9)%4]);
   character();
   const root=athlete;dynamic.remove(root);root.position.set(0,0,0);root.rotation.y=0;
-  const weights=[];root.traverse(o=>{if(o.isGroup&&o.parent===leftArm.elbow||o.isGroup&&o.parent===rightArm.elbow)weights.push(o)});
-  // Batch only rigid siblings: articulated shoulders, elbows and hips keep their pivots.
+  const weights=[leftArm.weight,rightArm.weight];
+  const drink=group(0,-.41,.09,rightArm.elbow);bottle(0,-.14,0,drink);
+  const handTowel=group(0,-.41,.09,leftArm.elbow);towel(0,-.08,0,.45,handTowel);
+  const clipboard=group(0,-.41,.18,leftArm.elbow);clipboard.rotation.x=-.6;
+  box(.54,.045,.38,0,0,0,woodLight,clipboard);box(.46,.01,.3,0,.03,0,ivory,clipboard);box(.16,.025,.05,0,.045,-.15,iron,clipboard);
+  const page=group(0,.04,-.14,clipboard);box(.44,.008,.28,0,0,.14,ivory,page);
+  for(let i=0;i<4;i++)box(.3-i*.025,.004,.012,0,.008,.06+i*.045,mat('#849180'),page);
+  // Batch only rigid siblings so the head, torso, joints and held props keep their pivots.
   const groups=[];root.traverse(o=>{if(o.isGroup)groups.push(o)});
   for(const part of groups){
    const bins=new Map();
@@ -152,7 +167,7 @@ function batch(root){root.updateMatrixWorld(true);const buckets=new Map(),invers
    for(const [material,matrices] of bins){const mesh=new T.InstancedMesh(unit,material,matrices.length);matrices.forEach((m,i)=>mesh.setMatrixAt(i,m));mesh.castShadow=true;mesh.receiveShadow=true;part.add(mesh);}
   }
   seed=previousSeed;
-  return {root,leftArm,rightArm,leftLeg,rightLeg,weights,shirt:characterCloth};
+  return {root,body,torso,head,leftArm,rightArm,leftLeg,rightLeg,weights,bottle:drink,towel:handTowel,clipboard,page,shirt:characterCloth};
  }
  return {training,actor,box,group,mat,textured,decal,plant,towel,bottle,dumbbell,batch,wood,woodLight,rubber,cloth,iron,dark,edge,gold,ivory,warm,unit};
 }

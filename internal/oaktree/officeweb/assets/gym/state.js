@@ -40,10 +40,15 @@ export function slotFor(layout, state, index) {
   return {x: room.x - 2.2 + (index % 3) * 2.2, z: room.back + (state === 'working' ? 7.3 : 3.1) + Math.floor(index / 3) * 2};
 }
 
+export function stationFor(layout, state, index) {
+  const room = layout[state];
+  if (state === 'ready' && index < 2) return {kind: 'bench', position: {x: room.x + (index ? .65 : -.65), z: room.front - 1.1}};
+  if (state === 'review' && index < 2) return {kind: 'desk', position: {x: room.x + (index ? .7 : -.7), z: room.front - 1.5}};
+  return {kind: 'floor', position: slotFor(layout, state, index - (state === 'ready' || state === 'review' ? 2 : 0))};
+}
+
 // Each slot has a clear column to the shared corridor. No path crosses the rack or benches.
-export function routeTo(start, target, corridor, sameZone) {
-  const path = sameZone
-    ? [{x: start.x, z: start.z + .8}, {x: target.x, z: start.z + .8}, target]
-    : [{x: start.x, z: corridor}, {x: target.x, z: corridor}, target];
+export function routeTo(start, target, corridor) {
+  const path = [{x: start.x, z: corridor}, {x: target.x, z: corridor}, target];
   return path.filter((point, index) => Math.hypot(point.x - (index ? path[index - 1].x : start.x), point.z - (index ? path[index - 1].z : start.z)) > .01);
 }
