@@ -2212,7 +2212,7 @@ func (m DashboardModel) renderKanbanCard(session Session, selected bool, width i
 		noteIcon = "✎"
 		titleTextWidth = max(1, titleWidth-2)
 	}
-	titleText := sessionProjectName(session)
+	titleText := sessionName(session)
 	if m.hasUnseenStatus(session) {
 		titleText = "● " + titleText
 	}
@@ -2385,7 +2385,7 @@ func (m DashboardModel) renderSessionTableRow(session Session, selected bool, wi
 		costColor = "81"
 	}
 	rowForeground, rowBackground := tableRowColors(selected)
-	sessionTitle := sessionProjectName(session)
+	sessionTitle := sessionName(session)
 	if m.hasUnseenStatus(session) {
 		sessionTitle = "● " + sessionTitle
 	}
@@ -2985,8 +2985,15 @@ func sessionProjectName(session Session) string {
 	return project
 }
 
+func sessionName(session Session) string {
+	if name := session.DisplayName(); name != "" {
+		return name
+	}
+	return sessionProjectName(session)
+}
+
 func sessionDisplayTitle(session Session) string {
-	project := sessionProjectName(session)
+	project := sessionName(session)
 	branch := strings.TrimSpace(session.Branch)
 	if branch == "" {
 		return project

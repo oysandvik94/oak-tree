@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -46,6 +47,7 @@ type officeBridge struct {
 	Identity     officeBridgeIdentity `json:"identity"`
 	Flows        []officeQuestion     `json:"flows"`
 	ToolFailures *officeToolFailures  `json:"toolFailures"`
+	LatestAnswer string               `json:"latestAnswer"`
 }
 
 type officeBridgeReply struct {
@@ -54,6 +56,7 @@ type officeBridgeReply struct {
 	Identity     officeBridgeIdentity `json:"identity"`
 	Flows        []officeQuestion     `json:"flows"`
 	ToolFailures *officeToolFailures  `json:"toolFailures"`
+	LatestAnswer string               `json:"latestAnswer"`
 }
 
 func officeBridgeRequest(socket string, request any, timeout time.Duration) (officeBridgeReply, error) {
@@ -111,7 +114,7 @@ func officeBridges(stateDir string) []officeBridge {
 				return
 			}
 			mu.Lock()
-			bridges = append(bridges, officeBridge{path: socket, Identity: reply.Identity, Flows: reply.Flows, ToolFailures: reply.ToolFailures})
+			bridges = append(bridges, officeBridge{path: socket, Identity: reply.Identity, Flows: reply.Flows, ToolFailures: reply.ToolFailures, LatestAnswer: reply.LatestAnswer})
 			mu.Unlock()
 		}(socket)
 	}
@@ -185,6 +188,8 @@ func officeAttachQuestions(snapshot *officeSnapshot, sessions []Session, bridges
 			continue
 		}
 		a.ToolFailures = bridge.ToolFailures
+		a.LatestAnswer = bridge.LatestAnswer
+		a.CanReply = true
 		a.Questions = bridge.Flows
 		if a.Questions == nil {
 			a.Questions = []officeQuestion{}
@@ -265,6 +270,40 @@ func officeSubmitAnswer(store *Store, request officeAnswerRequest) (int, string)
 	default:
 		return 503, "delivery uncertain"
 	}
+}
+
+func officeSendMessage(store *Store, agentID, text string) (int, string) {
+	if agentID == "" || len(agentID) > 1024 || strings.TrimSpace(text) == "" || len(text) > 16000 {
+		return 422, "invalid request"
+	}
+	sessions, err := store.ListSessions()
+	if err != nil {
+		return 503, "office unavailable"
+	}
+	session, role, ok := officeAgentSession(sessions, agentID)
+	if !ok {
+		return 409, "agent is no longer available"
+	}
+	bridge, ok := officeMatchingBridge(session, role, officeBridges(store.StateDir))
+	if !ok {
+		return 503, "office unavailable"
+	}
+	current, err := store.ListSessions()
+	if err != nil {
+		return 503, "office unavailable"
+	}
+	session, role, ok = officeAgentSession(current, agentID)
+	if !ok || !officeBridgeMatches(session, role, bridge.Identity) {
+		return 409, "agent is no longer available"
+	}
+	reply, err := officeBridgeRequest(bridge.path, map[string]any{"op": "message", "identity": bridge.Identity, "text": text}, 2200*time.Millisecond)
+	if err != nil {
+		return 503, "delivery uncertain"
+	}
+	if reply.OK {
+		return 200, ""
+	}
+	return 503, "office unavailable"
 }
 
 func officeJSONError(w io.Writer, message string) {

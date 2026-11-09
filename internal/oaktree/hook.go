@@ -24,6 +24,7 @@ type AgentEvent struct {
 	Cwd             string       `json:"cwd,omitempty"`
 	SessionID       string       `json:"session_id,omitempty"`
 	SessionFile     string       `json:"session_file,omitempty"`
+	SessionName     string       `json:"session_name,omitempty"`
 	Todo            *TodoSummary `json:"todo,omitempty"`
 	ActivityKind    string       `json:"activity_kind,omitempty"`
 	ActivityMessage string       `json:"activity_message,omitempty"`
@@ -78,6 +79,29 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 	}
 	if session.RightPaneID == "" {
 		return errors.New("oak-tree session is still starting")
+	}
+	if event.Event == "session_name_auto" || event.Event == "session_name_manual" {
+		if len(session.Agents) > 0 && event.AgentRole != "architect" {
+			return errors.New("session naming requires the architect agent")
+		}
+		name := strings.TrimSpace(strings.Join(strings.FieldsFunc(event.SessionName, unicode.IsControl), " "))
+		if len([]rune(name)) > 80 {
+			name = string([]rune(name)[:80])
+		}
+		if name == "oak-"+session.ID+"-architect" || name == "oak-"+session.ID+"-junior" {
+			return nil
+		}
+		return s.Store.UpdateSession(session.ID, func(stored *Session) error {
+			if stored.Name != "" && stored.DisplayName() == "" {
+				stored.Name, stored.NameManual = "", false
+			}
+			if event.Event == "session_name_manual" {
+				stored.Name, stored.NameManual = name, true
+			} else if stored.Name == "" && !stored.NameManual && name != "" {
+				stored.Name = name
+			}
+			return nil
+		})
 	}
 	if event.AgentRole != "" {
 		return s.handlePairedAgentEvent(ctx, session, event)

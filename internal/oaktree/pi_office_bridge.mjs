@@ -12,6 +12,23 @@ function createOfficeQuestionBridge(pi, getIdentity) {
   let starting;
   let generation;
   let failureCount = 0;
+  let latestAnswer = "";
+  const answerText = (message) => {
+    if (message?.role !== "assistant" || message.stopReason !== "stop" || !Array.isArray(message.content)) return "";
+    const text = message.content.filter((part) => part?.type === "text" && typeof part.text === "string").map((part) => part.text).join("\n").trim();
+    return text.length > 8000 ? text.slice(0, 8000) + "\n\n[Answer truncated]" : text;
+  };
+  pi.on?.("session_start", (_event, ctx) => {
+    latestAnswer = "";
+    for (const entry of ctx.sessionManager.getBranch()) {
+      const text = entry?.type === "message" ? answerText(entry.message) : "";
+      if (text) latestAnswer = text;
+    }
+  });
+  pi.on?.("message_end", (event) => {
+    const text = answerText(event.message);
+    if (text) latestAnswer = text;
+  });
   const nonce = () => randomBytes(24).toString("hex");
   const resultChannel = "@eko24ive/pi-ask:submit-result";
 
@@ -49,7 +66,12 @@ function createOfficeQuestionBridge(pi, getIdentity) {
     const identity = getIdentity();
     if (!identity?.session_id || !identity?.tmux_pane) return { ok: false, error: "unavailable" };
     if (request?.op === "list") {
-      return { ok: true, identity: { managedSessionId: process.env.OAK_TREE_SESSION_ID || "", role: process.env.OAK_TREE_AGENT_ROLE || "", piSessionId: identity.session_id, paneId: identity.tmux_pane, sessionFile: identity.session_file || "" }, toolFailures: generation ? { generation, count: failureCount } : undefined, flows: [...flows.values()].map(({ flowId, toolCallId, busy, ...view }) => view) };
+      return { ok: true, identity: { managedSessionId: process.env.OAK_TREE_SESSION_ID || "", role: process.env.OAK_TREE_AGENT_ROLE || "", piSessionId: identity.session_id, paneId: identity.tmux_pane, sessionFile: identity.session_file || "" }, toolFailures: generation ? { generation, count: failureCount } : undefined, latestAnswer, flows: [...flows.values()].map(({ flowId, toolCallId, busy, ...view }) => view) };
+    }
+    if (request?.op === "message") {
+      if (request.identity?.piSessionId !== identity.session_id || request.identity?.paneId !== identity.tmux_pane || request.identity?.sessionFile !== (identity.session_file || "") || request.identity?.managedSessionId !== (process.env.OAK_TREE_SESSION_ID || "") || request.identity?.role !== (process.env.OAK_TREE_AGENT_ROLE || "")) return { ok: false, error: "closed" };
+      if (typeof request.text !== "string" || !request.text.trim() || request.text.length > 16000) return { ok: false, error: "invalid" };
+      try { pi.sendUserMessage(request.text, { deliverAs: "followUp" }); return { ok: true }; } catch { return { ok: false, error: "unavailable" }; }
     }
     if (request?.op !== "submit" || typeof request.id !== "string" || typeof request.requestId !== "string" || !request.requestId || !request.response || typeof request.response !== "object") return { ok: false, error: "invalid" };
     if (request.identity?.piSessionId !== identity.session_id || request.identity?.paneId !== identity.tmux_pane || request.identity?.sessionFile !== (identity.session_file || "") || request.identity?.managedSessionId !== (process.env.OAK_TREE_SESSION_ID || "") || request.identity?.role !== (process.env.OAK_TREE_AGENT_ROLE || "")) return { ok: false, error: "closed" };

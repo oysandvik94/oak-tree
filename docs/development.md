@@ -58,13 +58,13 @@ Confirm each linked session row shows its `ccusage@20.0.20` cost after the backg
 ## Manual Office Verification
 
 1. Run `oak-tree office`, or press `f` in the dashboard. Confirm a local browser page opens with separate paired-agent characters, live task text, and all sessions in the roster.
-2. Change an agent's task/state through normal Pi activity. Confirm the page updates without reloading, and shared Campfire bubbles say `Session update`.
-3. Drag a character, then select a roster entry and use Space/arrow keys to move it. Confirm furniture constrains placement and no real agent state changes.
-4. Zoom, pan, focus each room, use `Fit office`, and resize to a narrow browser window. Confirm hit-testing stays aligned and the `Agents` drawer remains usable.
-5. Pause motion. Confirm activity still updates while automatic walking stops. Check the reduced-motion browser preference as well.
+2. Change an agent's task/state through normal Pi activity. Confirm the page updates without reloading, and the inspector labels session-scoped Campfire activity correctly.
+3. Drag to orbit, right-drag to pan, and select a roster entry. Confirm no real agent state changes. Double-clicking or Open session should focus only the intended managed session.
+4. Zoom, pan, press `f` with the canvas focused, and resize to a narrow browser window. Confirm hit-testing stays aligned and the roster and activity feed stack below the scene. Confirm no header or scene control panels remain.
+5. Pause motion. Confirm activity still updates while animation stops and state changes snap to the correct zone. Check the reduced-motion browser preference as well.
 6. Reopen the office and confirm the server is reused. Close the dashboard and confirm the page remains live. Verify disconnection is visible if the office server stops.
 7. In an isolated test state directory, verify wrong/missing tokens, foreign/null Origins, unexpected Hosts, unsupported methods, and unknown asset paths are rejected. Answer POSTs also require a same-origin header, JSON content, and a bounded body. Use synthetic text containing HTML to confirm it is displayed as text rather than interpreted.
-8. Verify every agent follows its session's dashboard state: working sessions use the work room, ready and question sessions use the central meeting room, and review or blocked sessions use the break room. Parked states take precedence over questions. Change a state and observe a doorway crossing, not a teleport or wall crossing.
+8. Verify each role uses its own active status: training for working, coaching for questions, recovery for ready. Session/group review and blocked overrides use their own zones and take precedence over questions. Verify an idle junior does not follow a working architect into training. Check live transitions through the connecting aisle, growth beyond six agents per zone, unknown status, agent removal, and an empty gym. Check cached PR and task details in the inspector.
 9. Use synthetic pi-ask flows to exercise single, multi, preview, custom-text, note, and explicit cancellation responses. Confirm normalized values/labels reach the original flow exactly once. Check terminal completion, stale/replayed IDs, invalid answers, missing acknowledgements, reload/shutdown, disconnected sockets, and draft preservation during polling. Do not answer real pending questions as a test.
 
 Focused checks do not require a model call:
@@ -75,7 +75,11 @@ go test ./internal/oaktree -run '^(TestOffice|TestPiOffice|TestPiCommand|TestEns
 
 To also check the installed pi-ask normalizer, set `PI_ASK_REMOTE_SOURCE` to its `src/remote-ask.ts` file. That optional contract harness uses Node's TypeScript stripping (Node 24 or newer), copies only that source to a test directory, and never launches an agent or modifies the installed package. Socket and mock-event tests use isolated state directories. Use Node 24 or newer when running the bridge tests; the Go-only server tests do not require Node.
 
-The browser sources and generated PNG assets are embedded from `internal/oaktree/officeweb/`. There is no npm build or runtime Python requirement. To regenerate artwork, use Python/Pillow as described in [the artwork generator](../tools/office-art/README.md). Keep browser screenshots, test state, and authentication records outside the checkout.
+The browser sources, original voxel builders and vendored Three.js r170 modules are embedded from `internal/oaktree/officeweb/`. There is no npm build or runtime Python requirement. Assets under `assets/gym/` use relative module imports and the existing self-only CSP. Three.js's MIT license is beside its vendored modules. The former PNG artwork generator remains in `tools/office-art/` but is not used by the gym.
+
+`tests/gym-browser.cjs` exercises the embedded page with synthetic API responses. It intercepts **all** API requests, including mutations, so it never sends a real agent a message, answer, note or focus request. It covers placement, mouse/keyboard interaction, forms, offline recovery, capacity changes, full-height desktop and stacked mobile layouts, Bergen seasonal lighting while paused, and a WebGL failure fallback. To run it, install Playwright in an external tooling directory, build oak-tree to a temporary binary, create a private temporary state directory, and start that binary with `office --serve --state-dir <tempdir>`. Then run `node tests/gym-browser.cjs <tempdir>` with `NODE_PATH` pointing to the tooling directory's `node_modules`. If needed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to an installed Chromium executable. `OAK_GYM_SCREENSHOT` selects a screenshot path outside the checkout (default `/tmp/oak-gym-integrated.png`). Stop only that isolated preview process afterward. A software-rendered browser check is not a hardware performance benchmark.
+
+Keep browser screenshots, test state, and authentication records outside the checkout. Because assets are embedded, an already-running office server keeps its original frontend until it is restarted with the rebuilt binary; refreshing the browser alone cannot update it.
 
 ## Usage Accounting
 

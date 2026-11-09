@@ -74,7 +74,7 @@ func TestPiOfficeToolFailureEvents(t *testing.T) {
 	script := source + `
 const handlers = new Map();
 const events = {on(){},emit(){}};
-const pi = {events, on(name,fn){handlers.set(name,fn)}, registerCommand(){},registerShortcut(){},exec:async()=>({code:0,stdout:''}),getAllTools:()=>['campfire_update','campfire_read','oak_coordination','ask_user'].map(name=>({name}))};
+const pi = {events, on(name,fn){handlers.set(name,fn)}, registerCommand(){},registerShortcut(){},getSessionName:()=>'',exec:async()=>({code:0,stdout:''}),getAllTools:()=>['campfire_update','campfire_read','oak_coordination','ask_user'].map(name=>({name}))};
 install(pi);
 const ctx={mode:'tui',hasUI:false,cwd:'/tmp',sessionManager:{getSessionId:()=> 'pi',getSessionFile:()=>'/tmp/pi',getBranch:()=>[]}};
 await handlers.get('session_start')({},ctx);

@@ -39,6 +39,7 @@ type officeAgentState struct {
 	ID             string              `json:"id"`
 	SessionID      string              `json:"sessionId"`
 	Project        string              `json:"project"`
+	Name           string              `json:"name,omitempty"`
 	Branch         string              `json:"branch"`
 	Role           string              `json:"role"`
 	Status         string              `json:"status"`
@@ -46,9 +47,14 @@ type officeAgentState struct {
 	Activity       string              `json:"activity"`
 	ActivitySource string              `json:"activitySource"`
 	UpdatedAt      time.Time           `json:"updatedAt"`
+	LatestAnswer   string              `json:"latestAnswer,omitempty"`
+	CanReply       bool                `json:"canReply"`
+	Notes          []StickyNote        `json:"notes"`
 	Questions      []officeQuestion    `json:"questions"`
 	Group          *officeGroup        `json:"group,omitempty"`
 	ToolFailures   *officeToolFailures `json:"toolFailures,omitempty"`
+	Todo           *TodoSummary        `json:"todo,omitempty"`
+	PR             *PRInfo             `json:"pr,omitempty"`
 }
 
 type officeGroup struct {
@@ -57,8 +63,9 @@ type officeGroup struct {
 }
 
 type officeSnapshot struct {
-	Agents    []officeAgentState `json:"agents"`
-	UpdatedAt time.Time          `json:"updatedAt"`
+	Agents    []officeAgentState    `json:"agents"`
+	UpdatedAt time.Time             `json:"updatedAt"`
+	History   []officeActivityEntry `json:"history"`
 }
 
 func officeStatus(status AgentStatus) string {
@@ -149,7 +156,7 @@ func officeSnapshotFrom(sessions []Session, posts []CampfireMessage, groups []Co
 			if project == "." || project == string(filepath.Separator) {
 				project = "session"
 			}
-			result.Agents = append(result.Agents, officeAgentState{ID: id, SessionID: session.ID, Project: project, Branch: session.Branch, Role: role, Status: name, SessionState: state, Activity: activity, ActivitySource: source, UpdatedAt: updated.UTC(), Group: group})
+			result.Agents = append(result.Agents, officeAgentState{ID: id, SessionID: session.ID, Project: project, Name: session.DisplayName(), Notes: session.StickyNotes[role], Branch: session.Branch, Role: role, Status: name, SessionState: state, Activity: activity, ActivitySource: source, UpdatedAt: updated.UTC(), Group: group, Todo: todo, PR: session.PR})
 		}
 		if len(session.Agents) == 0 {
 			add("", session.AgentStatus, session.Todo)
@@ -175,7 +182,7 @@ func officeHandler(store *Store, port int, token string, onActivity func()) http
 	_ = fs.WalkDir(officeAssets, "officeweb", func(name string, entry fs.DirEntry, err error) error {
 		if err == nil && !entry.IsDir() {
 			rel := strings.TrimPrefix(name, "officeweb/")
-			if rel == "index.html" || rel == "office.js" || rel == "questions.js" || rel == "office.css" || strings.HasPrefix(rel, "assets/") {
+			if rel == "index.html" || rel == "office.js" || rel == "questions.js" || rel == "activity.js" || rel == "office.css" || strings.HasPrefix(rel, "assets/") {
 				assets["/"+rel] = name
 			}
 		}
@@ -191,8 +198,8 @@ func officeHandler(store *Store, port int, token string, onActivity func()) http
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
-		if r.URL.Path == "/api/health" || r.URL.Path == "/api/state" || r.URL.Path == "/api/answer" || r.URL.Path == "/api/focus" {
-			isAction := r.URL.Path == "/api/answer" || r.URL.Path == "/api/focus"
+		if r.URL.Path == "/api/health" || r.URL.Path == "/api/state" || r.URL.Path == "/api/answer" || r.URL.Path == "/api/focus" || r.URL.Path == "/api/message" || r.URL.Path == "/api/notes" || r.URL.Path == "/api/activity/clear" {
+			isAction := r.URL.Path == "/api/answer" || r.URL.Path == "/api/focus" || r.URL.Path == "/api/message" || r.URL.Path == "/api/notes" || r.URL.Path == "/api/activity/clear"
 			if (isAction && r.Method != http.MethodPost) || (!isAction && r.Method != http.MethodGet) {
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 				return
@@ -220,6 +227,22 @@ func officeHandler(store *Store, port int, token string, onActivity func()) http
 				r.Body = http.MaxBytesReader(w, r.Body, 65536)
 				decoder := json.NewDecoder(r.Body)
 				decoder.DisallowUnknownFields()
+				if r.URL.Path == "/api/activity/clear" {
+					var request struct{}
+					var extra any
+					if decoder.Decode(&request) != nil || decoder.Decode(&extra) != io.EOF {
+						w.WriteHeader(http.StatusUnprocessableEntity)
+						officeJSONError(w, "invalid request")
+						return
+					}
+					if err := clearOfficeActivityHistory(store); err != nil {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						officeJSONError(w, "could not clear activity history")
+						return
+					}
+					_, _ = io.WriteString(w, `{"ok":true}`)
+					return
+				}
 				if r.URL.Path == "/api/focus" {
 					var request struct {
 						AgentID string `json:"agentId"`
@@ -236,6 +259,69 @@ func officeHandler(store *Store, port int, token string, onActivity func()) http
 						return
 					}
 					status, message := officeFocusSession(r.Context(), store, NewOSRunner(""), request.AgentID)
+					w.WriteHeader(status)
+					if status == http.StatusOK {
+						_, _ = io.WriteString(w, `{"ok":true}`)
+					} else {
+						officeJSONError(w, message)
+					}
+					return
+				}
+				if r.URL.Path == "/api/notes" {
+					var request struct {
+						AgentID string `json:"agentId"`
+						Action  string `json:"action"`
+						Text    string `json:"text"`
+						ID      string `json:"id"`
+					}
+					var extra any
+					if decoder.Decode(&request) != nil || decoder.Decode(&extra) != io.EOF || request.AgentID == "" || len(request.AgentID) > 1024 {
+						w.WriteHeader(http.StatusUnprocessableEntity)
+						officeJSONError(w, "invalid request")
+						return
+					}
+					sessions, err := store.ListSessions()
+					if err != nil {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						officeJSONError(w, "office unavailable")
+						return
+					}
+					session, role, ok := officeAgentSession(sessions, request.AgentID)
+					if !ok {
+						w.WriteHeader(http.StatusConflict)
+						officeJSONError(w, "agent is no longer available")
+						return
+					}
+					svc := NewService(Paths{StateDir: store.StateDir}, store, nil)
+					var note StickyNote
+					switch request.Action {
+					case "add":
+						note, err = svc.AddAgentNote(session.ID, role, request.Text)
+					case "delete":
+						err = svc.DeleteAgentNote(session.ID, role, request.ID)
+					default:
+						err = errors.New("invalid action")
+					}
+					if err != nil {
+						w.WriteHeader(http.StatusUnprocessableEntity)
+						officeJSONError(w, "could not update notes")
+						return
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "note": note})
+					return
+				}
+				if r.URL.Path == "/api/message" {
+					var request struct {
+						AgentID string `json:"agentId"`
+						Text    string `json:"text"`
+					}
+					var extra any
+					if decoder.Decode(&request) != nil || decoder.Decode(&extra) != io.EOF {
+						w.WriteHeader(http.StatusUnprocessableEntity)
+						officeJSONError(w, "invalid request")
+						return
+					}
+					status, message := officeSendMessage(store, request.AgentID, request.Text)
 					w.WriteHeader(status)
 					if status == http.StatusOK {
 						_, _ = io.WriteString(w, `{"ok":true}`)
@@ -286,6 +372,12 @@ func officeHandler(store *Store, port int, token string, onActivity func()) http
 			}
 			snapshot := officeSnapshotFrom(sessions, posts, groups, time.Now())
 			officeAttachQuestions(&snapshot, sessions, officeBridges(store.StateDir))
+			snapshot.History, err = updateOfficeActivityHistory(store, &snapshot)
+			if err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				officeJSONError(w, "activity history unavailable")
+				return
+			}
 			_ = json.NewEncoder(w).Encode(snapshot)
 			return
 		}

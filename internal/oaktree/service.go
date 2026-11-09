@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type BranchMode string
@@ -293,6 +294,61 @@ func (s *Service) SetSessionNote(ctx context.Context, id, note string) (Session,
 		return Session{}, err
 	}
 	return s.Store.LoadSession(id)
+}
+
+func validStickyNoteRole(session *Session, role string) bool {
+	if len(session.Agents) == 0 {
+		return role == ""
+	}
+	_, ok := session.Agents[role]
+	return role != "" && ok
+}
+
+func (s *Service) AddAgentNote(sessionID, role, text string) (StickyNote, error) {
+	text = strings.TrimSpace(text)
+	if text == "" || len([]rune(text)) > 2000 {
+		return StickyNote{}, errors.New("note must contain 1 to 2000 characters")
+	}
+	for _, r := range text {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return StickyNote{}, errors.New("note contains unsupported control characters")
+		}
+	}
+	var id [12]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		return StickyNote{}, err
+	}
+	note := StickyNote{ID: fmt.Sprintf("%x", id), Text: text, CreatedAt: time.Now().UTC()}
+	err := s.Store.UpdateSession(sessionID, func(session *Session) error {
+		if !validStickyNoteRole(session, role) {
+			return errors.New("agent not found")
+		}
+		if len(session.StickyNotes[role]) >= 100 {
+			return errors.New("agent has too many notes")
+		}
+		if session.StickyNotes == nil {
+			session.StickyNotes = make(map[string][]StickyNote)
+		}
+		session.StickyNotes[role] = append(session.StickyNotes[role], note)
+		return nil
+	})
+	return note, err
+}
+
+func (s *Service) DeleteAgentNote(sessionID, role, noteID string) error {
+	return s.Store.UpdateSession(sessionID, func(session *Session) error {
+		if !validStickyNoteRole(session, role) {
+			return errors.New("agent not found")
+		}
+		notes := session.StickyNotes[role]
+		for i, note := range notes {
+			if note.ID == noteID {
+				session.StickyNotes[role] = append(notes[:i], notes[i+1:]...)
+				return nil
+			}
+		}
+		return errors.New("note not found")
+	})
 }
 
 func (s *Service) AcknowledgeAgentAttention(ctx context.Context, id string) (Session, error) {

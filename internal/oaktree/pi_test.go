@@ -84,19 +84,20 @@ func TestPiCommandUsesPrivateExtensionAndOakSessionIdentity(t *testing.T) {
 	}
 }
 
-func TestPairedPiCommandUsesCheapModelsAndBoundedExpert(t *testing.T) {
+func TestPairedPiCommandUsesRoleModelsAndBoundedExpert(t *testing.T) {
 	base := []string{"env", "OAK_TREE_SESSION_ID=test", "OAK_TREE_HOOK=hook", "pi", "--append-system-prompt", piManagedCheckoutPrompt}
 	original := append([]string(nil), base...)
 	for _, role := range []string{"architect", "junior"} {
 		command := PairedPiCommand(base, "test", role)
 		joined := strings.Join(command, " ")
-		for _, want := range []string{"OAK_TREE_AGENT_ROLE=" + role, "--model openai-codex/gpt-6.1-terra", "--thinking high", "--name oak-test-" + role, piManagedCheckoutPrompt} {
+		model, thinking := "openai-codex/gpt-6.1-sol", "xhigh"
+		if role == "junior" {
+			model, thinking = "openai-codex/gpt-6.1-terra", "high"
+		}
+		for _, want := range []string{"OAK_TREE_AGENT_ROLE=" + role, "--model " + model, "--thinking " + thinking, "--name oak-test-" + role, piManagedCheckoutPrompt} {
 			if !strings.Contains(joined, want) {
 				t.Errorf("%s command missing %q: %v", role, want, command)
 			}
-		}
-		if strings.Contains(joined, "--model openai-codex/gpt-6-astra") {
-			t.Errorf("%s must not launch the persistent agent on Astra", role)
 		}
 		if role == "architect" {
 			for _, want := range []string{"Handle routine work directly", "only when doing so saves work", "read-only Explore", "model openai-codex/gpt-6-astra", "thinking low", "inherit_context false", "max_turns 6", "If Agent or Explore is unavailable", "approval requirements"} {

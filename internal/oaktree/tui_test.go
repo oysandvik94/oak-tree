@@ -1269,3 +1269,16 @@ func TestTruncateMiddle(t *testing.T) {
 		t.Fatalf("truncateMiddle() = %q, want %q", got, "ab…ef")
 	}
 }
+
+func TestSessionNameFallsBackFromRoutingName(t *testing.T) {
+	for _, name := range []string{"", "oak-test-architect", "oak-test-junior"} {
+		session := Session{ID: "test", Root: "/repos/example", Name: name}
+		if got := sessionName(session); got != "example" {
+			t.Errorf("name %q: got %q", name, got)
+		}
+	}
+	session := Session{ID: "test", Root: "/repos/example", Name: "Useful title"}
+	if got := sessionName(session); got != "Useful title" {
+		t.Errorf("got %q", got)
+	}
+}

@@ -5,33 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="referrer" content="no-referrer">
-  <title>The office · oak-tree</title>
+  <title>Oak Athletic · oak-tree</title>
   <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/office.css">
   <script type="module" src="/office.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><span class="brand-mark" aria-hidden="true">♧</span><div><span class="eyebrow">OAK-TREE</span><h1>The office<span class="title-dot">.</span></h1></div></div>
-    <div class="office-status"><span class="connection" id="connection" role="status">Connecting</span><span class="agent-total" id="agent-total">Waiting for agents</span></div>
-    <button class="quiet-button roster-toggle" id="roster-toggle" aria-controls="roster-panel" aria-expanded="false">Agents</button>
-  </header>
   <main class="workspace">
-    <section class="stage-panel" aria-label="Interactive agent office">
-      <div class="scene-toolbar"><div class="scene-caption"><span class="eyebrow">THE STUDIO</span><span>Different rooms. One team.</span></div><div class="scene-actions"><button class="quiet-button" id="motion-toggle" aria-pressed="false">Pause motion</button><button class="quiet-button" id="fit-room">Fit office <kbd>F</kbd></button></div></div>
-      <nav id="room-navigation" class="room-navigation" aria-label="Focus a room">
-        <button class="quiet-button" data-room="all" aria-pressed="true">All rooms</button>
-        <button class="quiet-button" data-room="work" id="room-work" aria-pressed="false">Work room</button>
-        <button class="quiet-button" data-room="meeting" id="room-meeting" aria-pressed="false">Meeting room</button>
-        <button class="quiet-button" data-room="break" id="room-break" aria-pressed="false">Break room</button>
-      </nav>
+    <aside class="chat-panel" aria-labelledby="chat-title">
+      <header class="chat-heading">
+        <div><span class="eyebrow">AROUND THE GYM</span><h2 id="chat-title">Recent activity</h2></div>
+        <button type="button" class="quiet-button chat-clear" id="chat-clear" aria-label="Clear recent activity">Clear</button>
+      </header>
+      <div class="chat-body">
+        <p class="chat-empty" id="chat-empty">Oak Athletic is quiet for now. Agent updates will appear here.</p>
+        <ol class="chat-log" id="chat-log" aria-label="Recent agent updates"></ol>
+      </div>
+    </aside>
+    <section class="stage-panel" aria-label="Interactive agent gym">
       <div id="stage" class="stage">
-        <canvas id="office" tabindex="0" aria-label="Agent office. Select an agent from the list, then use arrow keys to move it. Drag agents with the mouse. Shift-drag empty space to pan; scroll to zoom. Enter answers a selected agent's question."></canvas>
+        <canvas id="office" tabindex="0" aria-label="Agent gym. Drag to orbit; right-drag to pan; scroll to zoom. Select an agent from the list or scene. Enter answers its question or opens its session. F fits the gym. Space pauses motion."></canvas>
+        <div id="agent-labels" class="agent-labels"></div>
         <div id="bubbles" class="bubbles"></div>
-        <div class="stage-message" id="stage-message" role="status">Opening the studio…</div>
+        <div class="stage-message" id="stage-message" role="status">Opening the gym…</div>
         <div class="connection-warning" id="connection-warning" role="alert" hidden></div>
       </div>
-      <footer class="scene-footer"><span><span class="key-hint">Double-click</span> an agent to open its session <span class="divider">/</span> <span class="key-hint">Drag</span> an agent <span class="divider">/</span> <span class="key-hint">Scroll</span> to zoom <span class="divider">/</span> <span class="key-hint">Shift + drag</span> to pan</span><span id="interaction-status">Movement is just for fun.</span></footer>
+
     </section>
     <aside class="roster-panel" id="roster-panel" aria-label="Agents and activity">
       <div class="roster-heading"><h2>Who's here</h2><span class="roster-count" id="roster-count">0</span></div>
@@ -45,11 +44,27 @@
         <p class="selected-group" id="selected-group" hidden></p>
         <div class="activity-card"><span class="eyebrow" id="activity-source">CURRENT ACTIVITY</span><p id="selected-activity"></p></div>
         <div id="question-launcher" class="question-launcher" hidden></div>
-        <p class="inspector-help">Arrow keys move this character. Real agent work continues unchanged.</p>
+        <button type="button" class="quiet-button question-launcher" id="conversation-open">Latest answer &amp; reply</button>
+        <button type="button" class="quiet-button question-launcher" id="notes-open">Sticky notes</button>
+        <button type="button" class="quiet-button question-launcher" id="session-open">Open session ↗</button>
+        <p id="interaction-status" role="status"></p>
+        <details id="tasks-section" hidden><summary>Tasks</summary><ul id="selected-tasks"></ul></details>
+        <div id="selected-pr" hidden></div>
+        <p class="inspector-help">Zones reflect each agent's status. Review and blocked tags override placement. Camera and animation never change real work.</p>
       </section>
-      <div class="roster-footer"><span class="local-dot"></span> Local view. No extra AI calls.</div>
+      <div class="roster-footer"><span class="connection" id="connection" role="status">Connecting</span> · Local view. No extra AI calls.</div>
     </aside>
   </main>
+  <dialog id="notes-dialog" class="question-dialog" aria-labelledby="notes-title">
+    <form id="notes-form"><header class="question-header"><div><span class="eyebrow" id="notes-agent"></span><h2 id="notes-title">Sticky notes</h2></div><button type="button" class="quiet-button" id="notes-close">Close</button></header>
+      <div class="question-scroll"><p class="answer-hint">Notes are reminders for you, not messages to the agent. In Pi, use /oak-notes to view them.</p><div id="notes-list"></div><label for="notes-text">New note</label><textarea id="notes-text" maxlength="2000" rows="3" placeholder="An idea for later…"></textarea></div>
+      <footer class="question-footer"><p id="notes-feedback" role="status"></p><button type="submit" class="answer-button" id="notes-add">Add note</button></footer></form>
+  </dialog>
+  <dialog id="conversation-dialog" class="question-dialog" aria-labelledby="conversation-title">
+    <header class="question-header"><div><span class="eyebrow" id="conversation-agent"></span><h2 id="conversation-title">Latest answer</h2></div><button type="button" class="quiet-button" id="conversation-close">Close</button></header>
+    <div class="question-scroll"><div id="conversation-answer" class="conversation-answer"></div><label for="conversation-reply">Reply</label><textarea id="conversation-reply" maxlength="16000" rows="4" placeholder="Write a follow-up…"></textarea><p class="answer-hint">If the agent is working, your reply is queued until it finishes.</p></div>
+    <footer class="question-footer"><p id="conversation-feedback" role="status"></p><button type="button" class="answer-button" id="conversation-send">Send reply</button></footer>
+  </dialog>
   <dialog id="question-dialog" class="question-dialog" aria-labelledby="question-title" aria-describedby="question-policy">
     <form id="question-form">
       <header class="question-header"><div><span class="eyebrow" id="question-agent"></span><h2 id="question-title">Your answer is needed</h2></div><button type="button" class="quiet-button" id="question-close" aria-label="Close question">Close</button></header>
