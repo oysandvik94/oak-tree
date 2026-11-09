@@ -9,7 +9,9 @@ const routines = {
   unknown: ['look-around', 'rest'],
 };
 
-export function gymPose(state, identity, time, {seated = false, desk = false, walking = false, still = false, eventAge = Infinity} = {}) {
+export const trainingSetDuration = identity => 25 + identity % 5;
+
+export function gymPose(state, identity, time, {seated = false, desk = false, equipment, equipmentTime = 0, walking = false, still = false, eventAge = Infinity} = {}) {
   const clock = time * (.85 + identity % 11 * .03) + identity % 97 * .19;
   const duration = 14 + (identity >>> 4) % 5;
   const choices = seated ? ['drink', 'seated-stretch', 'rest'] : routines[state] || routines.unknown;
@@ -17,7 +19,7 @@ export function gymPose(state, identity, time, {seated = false, desk = false, wa
   let amount = smooth(phase / 1.2) * smooth((duration - 2 - phase) / 1.2);
   const pose = {
     routine: choices[(Math.floor(clock / duration) + (identity >>> 8)) % choices.length],
-    bodyY: seated ? -.32 : 0, breath: Math.sin(clock * 1.8) * .006,
+    bodyY: seated ? -.32 : 0, bodyZ: 0, breath: Math.sin(clock * 1.8) * .006,
     sway: Math.sin(clock * .7) * .012, lean: desk ? .12 : .015,
     headYaw: Math.sin(clock * .38) * .16, headPitch: Math.sin(clock * .6) * .025,
     leftShoulderX: 0, rightShoulderX: 0, leftShoulderZ: .045, rightShoulderZ: -.045,
@@ -25,7 +27,7 @@ export function gymPose(state, identity, time, {seated = false, desk = false, wa
     leftHip: seated ? -Math.PI / 2 : 0, rightHip: seated ? -Math.PI / 2 : 0,
     leftKnee: seated ? Math.PI / 2 : 0, rightKnee: seated ? Math.PI / 2 : 0,
     offsetX: 0, facing: 0, stride: 0, weights: false, bottle: false, towel: false,
-    clipboard: false, pageTurn: 0,
+    clipboard: false, pageTurn: 0, machineLift: 0, handTargets: null, barHeld: false,
   };
   function blend(name, value) { pose[name] = lerp(pose[name], value, amount); }
   function walk(stride) {
@@ -42,6 +44,41 @@ export function gymPose(state, identity, time, {seated = false, desk = false, wa
   if (walking) {
     pose.routine = 'walk'; pose.lean = .04; walk(1);
     if (state === 'question' && eventAge < 3) { pose.rightShoulderZ = -2.7; pose.rightElbow = -.4; }
+    return pose;
+  }
+  if (equipment) {
+    const workTime = trainingSetDuration(identity) - 3;
+    const rep = .5 - .5 * Math.cos(Math.min(Math.max(0, equipmentTime), workTime) / workTime * 8 * Math.PI);
+    pose.routine = equipment; pose.barHeld = true;
+    pose.headYaw *= .25; pose.sway = 0;
+    if (equipment === 'squat-rack') {
+      const bend = rep * .85;
+      pose.leftHip = pose.rightHip = -bend;
+      pose.leftKnee = pose.rightKnee = bend * 2;
+      pose.bodyY = -.93 * (1 - Math.cos(bend));
+      pose.lean = rep * .24;
+      pose.handTargets = [[-.75,.69,-.12],[.75,.69,-.12]];
+    } else if (equipment === 'deadlift-platform') {
+      const resting = equipmentTime >= workTime, bend = resting ? 0 : 1 - rep;
+      pose.barHeld = !resting;
+      pose.leftHip = pose.rightHip = -bend * 1.1;
+      pose.leftKnee = pose.rightKnee = bend * 1.5;
+      pose.bodyY = .44 * Math.cos(bend * 1.1) + .49 * Math.cos(bend * .4) - .93;
+      pose.bodyZ = -.44 * Math.sin(bend * 1.1) + .49 * Math.sin(bend * .4);
+      pose.lean = bend * .72;
+      pose.leftShoulderX = pose.rightShoulderX = -pose.lean;
+      pose.leftShoulderZ = pose.rightShoulderZ = 0;
+      pose.leftElbow = pose.rightElbow = 0;
+    } else if (equipment === 'pec-deck') {
+      pose.bodyY = -.32; pose.lean = 0;
+      pose.leftHip = pose.rightHip = -Math.PI / 2;
+      pose.leftKnee = pose.rightKnee = Math.PI / 2;
+      pose.leftShoulderX = pose.rightShoulderX = -Math.PI / 2;
+      pose.leftShoulderZ = -1.2 + rep * 1.35;
+      pose.rightShoulderZ = -pose.leftShoulderZ;
+      pose.leftElbow = pose.rightElbow = -.35;
+      pose.machineLift = rep;
+    }
     return pose;
   }
   if ((state === 'question' || state === 'ready') && eventAge < 3) {
@@ -152,14 +189,33 @@ export function applyGymPose(model, pose, amount = 1) {
     part.rotation.set(lerp(part.rotation.x, x, amount), lerp(part.rotation.y, y, amount), lerp(part.rotation.z, z, amount));
   }
   model.body.position.y = lerp(model.body.position.y, pose.bodyY, amount);
+  model.body.position.z = lerp(model.body.position.z, pose.bodyZ, amount);
   model.body.scale.y = 1 + pose.breath;
   rotate(model.body, 0, 0, pose.sway);
   rotate(model.torso, pose.lean);
   rotate(model.head, pose.headPitch, pose.headYaw);
-  rotate(model.leftArm.shoulder, pose.leftShoulderX, 0, pose.leftShoulderZ);
-  rotate(model.rightArm.shoulder, pose.rightShoulderX, 0, pose.rightShoulderZ);
-  rotate(model.leftArm.elbow, pose.leftElbow);
-  rotate(model.rightArm.elbow, pose.rightElbow);
+  if (pose.handTargets) {
+    // Solve both arm joints so the squat grips stay on the bar, with elbows behind it.
+    const upper = .49, lower = .41;
+    [model.leftArm, model.rightArm].forEach((arm, index) => {
+      const down = arm.shoulder.position.clone().set(0,-1,0);
+      const target = down.clone().fromArray(pose.handTargets[index]).sub(arm.shoulder.position);
+      const distance = target.length(), direction = target.clone().normalize();
+      const reach = (upper ** 2 - lower ** 2 + distance ** 2) / (2 * distance);
+      const pole = down.clone().set(0,-1,-.35);
+      pole.addScaledVector(direction,-pole.dot(direction)).normalize();
+      const elbow = direction.clone().multiplyScalar(reach).addScaledVector(pole,Math.sqrt(upper ** 2 - reach ** 2));
+      const shoulder = arm.shoulder.quaternion.clone().setFromUnitVectors(down,elbow.clone().normalize());
+      const forearm = target.clone().sub(elbow).applyQuaternion(shoulder.clone().invert()).normalize();
+      const joint = arm.elbow.quaternion.clone().setFromUnitVectors(down,forearm);
+      arm.shoulder.quaternion.slerp(shoulder,amount); arm.elbow.quaternion.slerp(joint,amount);
+    });
+  } else {
+    rotate(model.leftArm.shoulder, pose.leftShoulderX, 0, pose.leftShoulderZ);
+    rotate(model.rightArm.shoulder, pose.rightShoulderX, 0, pose.rightShoulderZ);
+    rotate(model.leftArm.elbow, pose.leftElbow);
+    rotate(model.rightArm.elbow, pose.rightElbow);
+  }
   rotate(model.leftLeg.hip, pose.leftHip);
   rotate(model.rightLeg.hip, pose.rightHip);
   rotate(model.leftLeg.knee, pose.leftKnee);

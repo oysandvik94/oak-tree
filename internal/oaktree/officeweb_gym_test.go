@@ -11,7 +11,7 @@ import (
 
 func TestOfficeGymAssets(t *testing.T) {
 	handler := officeHandler(NewStore(t.TempDir()), 4321, "token", nil)
-	for _, path := range []string{"/assets/gym/view.js", "/assets/gym/art.js", "/assets/gym/state.js", "/assets/gym/motion.js", "/assets/gym/font.js", "/assets/gym/lighting.js", "/assets/gym/vendor/three.module.js", "/assets/gym/vendor/OrbitControls.js", "/assets/gym/vendor/RoomEnvironment.js"} {
+	for _, path := range []string{"/assets/gym/view.js", "/assets/gym/art.js", "/assets/gym/state.js", "/assets/gym/motion.js", "/assets/gym/equipment.js", "/assets/gym/font.js", "/assets/gym/lighting.js", "/assets/gym/vendor/three.module.js", "/assets/gym/vendor/OrbitControls.js", "/assets/gym/vendor/RoomEnvironment.js"} {
 		t.Run(path, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:4321"+path, nil)
 			w := httptest.NewRecorder()
@@ -55,6 +55,51 @@ for (const state of Object.keys(capacity)) {
   assert(station.kind===(state==='ready'&&i<2?'bench':state==='review'&&i<2?'desk':'floor'),'incorrect furniture assignment');
  }
 }
+assert(layout.equipment.length===6,'training wing lacks six equipment stations');
+for(const kind of ['squat-rack','deadlift-platform','pec-deck'])assert(layout.equipment.filter(station=>station.kind===kind).length===2,'incorrect equipment count');
+assert(new Set(layout.equipment.map(station=>station.id)).size===6,'duplicate equipment ids');
+for(const station of layout.equipment){
+ const {x,z}=station.position,room=layout.working;
+ assert(x-1.7>room.x-room.width/2&&x+1.7<room.x+room.width/2&&z-1.4>room.back&&z+1.8<room.front,'equipment lacks clearance');
+ for(const target of layout.equipment){
+  const path=stationRoute(layout,station.position,target);
+  assert(path.at(-1)===target.position,'equipment route misses its destination');
+  let start=station.position;
+  for(const end of path){
+   const steps=Math.ceil(Math.hypot(end.x-start.x,end.z-start.z)/.2);
+   for(let i=0;i<=steps;i++){
+    const x=start.x+(end.x-start.x)*i/steps,z=start.z+(end.z-start.z)*i/steps;
+    for(const obstacle of layout.equipment.filter(item=>item!==station&&item!==target))assert(Math.abs(x-obstacle.position.x)>=1.7||Math.abs(z-obstacle.position.z)>=1.4,'route crosses another machine');
+   }
+   start=end;
+  }
+ }
+}
+const workers=Array.from({length:8},(_,index)=>{
+ const floorStation={kind:'floor',id:'floor-'+index,position:slotFor(layout,'working',index)};
+ return {data:{id:'worker-'+index},station:floorStation,floorStation,position:{...floorStation.position},path:[],rotationAt:0,lastEquipment:null};
+});
+const apply=(changes,time)=>changes.forEach(({worker,station})=>{
+ worker.station=station;worker.position={...station.position};worker.rotationAt=time+(isEquipment(station)?25:5);
+ if(isEquipment(station))worker.lastEquipment=station.id;
+});
+const first=trainingRotations(workers,layout.equipment,0);
+assert(first.length===6&&new Set(first.map(change=>change.station.id)).size===6,'initial reservations overlap');
+apply(first,0);
+assert(trainingRotations(workers,layout.equipment,25,workers,{paused:true}).length===0,'paused workers rotate');
+const exits=trainingRotations(workers,layout.equipment,25);
+assert(exits.length===6&&exits.every(change=>change.station.kind==='floor'),'set does not end with a rest');
+apply(exits,25);
+const waiting=trainingRotations(workers,layout.equipment,26);
+assert(waiting.length===2&&waiting.every(change=>['worker-6','worker-7'].includes(change.worker.data.id)),'overflow agents starve');
+apply(waiting,26);
+const next=trainingRotations(workers,layout.equipment,30);
+assert(next.length===4&&new Set([...waiting,...next].map(change=>change.station.id)).size===6,'rotation double-books equipment');
+const departed=waiting[0];
+const survivors=workers.filter(worker=>worker!==departed.worker);
+assert(trainingRotations(survivors,layout.equipment,30).some(change=>change.station.id===departed.station.id),'removed agent keeps its reservation');
+const leaving=workers[0];leaving.station=leaving.floorStation;leaving.position={...layout.equipment[2].position};leaving.rotationAt=100;
+assert(!trainingRotations(workers,layout.equipment,30).some(change=>change.station.id===layout.equipment[2].id),'station reused before departing actor cleared it');
 const a=slotFor(layout,'working',0),b=slotFor(layout,'ready',0);
 const path=routeTo(a,b,layout.corridor);
 assert(path[0].z===layout.corridor && path[path.length-1]===b,'transition bypasses corridor');
@@ -97,6 +142,16 @@ for(let time=0;time<120;time++) {
  assert(pose.leftHip===-Math.PI/2&&pose.rightHip===-Math.PI/2,'seated thighs are not bent');
  assert(pose.leftKnee===Math.PI/2&&pose.rightKnee===Math.PI/2,'seated knees are not bent');
  assert(pose.offsetX===0,'seated actor wanders off the bench');
+}
+for(const equipment of ['squat-rack','deadlift-platform','pec-deck'])for(let elapsed=0;elapsed<35;elapsed+=.25){
+ const pose=gymPose('working',42,elapsed,{equipment,equipmentTime:elapsed});
+ assert(pose.routine===equipment&&pose.offsetX===0,'equipment user leaves its station');
+ for(const value of Object.values(pose))if(typeof value==='number')assert(Number.isFinite(value),'non-finite equipment pose');
+ assert(pose.bodyY>=-.35,'equipment user sinks through the floor');
+ if(equipment==='squat-rack')assert(pose.handTargets.length===2,'squat lacks barbell grips');
+ if(equipment==='deadlift-platform')assert(pose.leftElbow===0&&pose.rightElbow===0,'deadlift bends its arms');
+ if(equipment==='pec-deck')assert(pose.leftHip===-Math.PI/2&&pose.leftKnee===Math.PI/2&&pose.machineLift>=0&&pose.machineLift<=1,'pec deck is not seated and synchronized');
+ assert(gymPose('working',42,elapsed,{equipment,walking:true}).routine==='walk','travelling agent lifts equipment');
 }
 assert(gymPose('question',42,10,{eventAge:1}).routine==='hand-raise','new question is not acknowledged');
 assert(gymPose('ready',42,10,{eventAge:1}).routine==='stretch','completion has no reaction');
