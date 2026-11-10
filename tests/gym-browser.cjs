@@ -33,22 +33,23 @@ const assert = require('node:assert/strict');
   }
   const url=`http://127.0.0.1:${record.port}/#token=${record.token}`;
   try {
-    const page=await browser.newPage({viewport:{width:1680,height:1050},reducedMotion:'reduce'});
+    const page=await browser.newPage({viewport:{width:1680,height:1050},reducedMotion:'reduce',timezoneId:'Europe/Oslo'});
     page.setDefaultTimeout(15000);await fixtures(page);await page.goto(url);
     await page.waitForFunction(()=>window.oakGym?.getInfo().agents===8);
     console.log('Loaded live fixture; checking state mapping and camera controls.');
     assert.equal(await page.locator('#connection').textContent(),'Live');
-    assert.equal((await page.evaluate(()=>window.oakGym.getInfo())).positions['Atlas:junior'].state,'ready');
+    assert.equal((await page.evaluate(()=>window.oakGym.getInfo())).positions['Atlas:junior'].spotting,'Atlas:architect');
+    assert.match(await page.locator('[data-agent-id="Atlas:junior"] .agent-role').textContent(),/Spotting.*Session busy/);
     assert.equal((await page.evaluate(()=>window.oakGym.getInfo())).positions['Sage:architect'].state,'blocked');
     const initialMotion=await page.evaluate(()=>window.oakGym.getInfo());
     assert.equal(initialMotion.animationTime,0,'reduced-motion preference should pause routines');
-    assert.equal(initialMotion.equipment.length,6);
-    for(const kind of ['squat-rack','deadlift-platform','pec-deck'])assert.equal(initialMotion.equipment.filter(station=>station.kind===kind).length,2);
+    assert.equal(initialMotion.equipment.length,8);
+    assert.equal(new Set(initialMotion.equipment.map(station=>station.kind)).size,8);
     const occupied=initialMotion.equipment.filter(station=>station.occupant);
     assert.equal(occupied.length,2);
     assert.equal(new Set(occupied.map(station=>station.occupant)).size,2,'two machines share an occupant');
-    assert.equal(initialMotion.positions['Atlas:architect'].station,'squat-rack');
-    assert.equal(initialMotion.positions['Atlas:junior'].station,'bench');
+    assert.ok(initialMotion.equipment.some(station=>station.id===initialMotion.positions['Atlas:architect'].stationId));
+    assert.equal(initialMotion.positions['Atlas:junior'].station,'spotter');
     assert.equal(initialMotion.positions['Fern:architect'].station,'bench');
     assert.equal(initialMotion.positions['Moss:architect'].station,'desk');
     assert.equal(await page.locator('.agent-row').count(),8);
@@ -109,14 +110,14 @@ const assert = require('node:assert/strict');
     console.log('Expanded to 16 agents.');
     const expanded=await page.evaluate(()=>window.oakGym.getInfo());
     assert.ok(expanded.capacity.working>=9);
-    assert.equal(expanded.equipment.filter(station=>station.occupant).length,6);
-    assert.equal(new Set(expanded.equipment.map(station=>station.occupant)).size,6,'growth double-booked a station');
+    assert.equal(expanded.equipment.filter(station=>station.occupant).length,8);
+    assert.equal(new Set(expanded.equipment.map(station=>station.occupant)).size,8,'growth double-booked a station');
     assert.equal(expanded.animationTime,0,'paused equipment rotations advanced');
     agents=agents.slice(0,3);await page.waitForFunction(()=>window.oakGym.getInfo().agents===3);
     console.log('Removed agents; checking scene controls.');
     assert.equal(await page.locator('.gym-agent-label').count(),3);
     assert.ok((await page.evaluate(()=>window.oakGym.getInfo())).equipment.every(station=>!station.occupant),'removed agents retained equipment reservations');
-    await page.locator('#office').focus();await page.keyboard.press('Space');await page.keyboard.press('Space');
+    await page.locator('#office').focus();await page.keyboard.press('Space');
     await page.keyboard.press('f');
     console.log('Capacity changes and presentation controls checked; checking reconnect.');
     offline=true;await page.waitForFunction(()=>document.querySelector('#connection').textContent==='Disconnected');
@@ -133,6 +134,12 @@ const assert = require('node:assert/strict');
     assert.ok(calls.some(c=>c.endpoint==='/api/focus'));
     assert.ok(calls.some(c=>c.endpoint==='/api/message'&&c.body.text==='A fixture-only reply'));
     assert.ok(calls.some(c=>c.endpoint==='/api/answer'));
+    for(const [time,expected] of [['2026-12-21T08:00:00+01:00',0],['2026-06-21T08:00:00+02:00',1],['2026-12-21T17:00:00+01:00',0],['2026-06-21T12:00:00+02:00',1]]){
+      await page.clock.setFixedTime(new Date(time));
+      await page.waitForFunction(expected=>Math.abs(window.oakGym.getInfo().daylight-expected)<.001,expected);
+    }
+    assert.equal(await page.evaluate(()=>window.oakGym.getInfo().animationTime),0,'Space should not override reduced motion');
+    console.log('Bergen seasonal lighting updates while animation is paused.');
     await page.close();
     console.log('Offline, empty and mobile states checked; checking normal-motion travel.');
     const animated=await browser.newPage({viewport:{width:1200,height:900},reducedMotion:'no-preference',timezoneId:'Europe/Oslo'});
@@ -142,13 +149,8 @@ const assert = require('node:assert/strict');
     await animated.waitForFunction(()=>window.oakGym.getInfo().positions['Mobile:architect'].state==='question');
     await animated.waitForFunction(({x,z})=>{const p=window.oakGym.getInfo().positions['Mobile:architect'];return Math.hypot(p.x-x,p.z-z)>.05;},before);
     await animated.locator('#office').focus();await animated.keyboard.press('Space');
-    const pausedTime=await animated.evaluate(()=>window.oakGym.getInfo().animationTime);
-    for(const [time,expected] of [['2026-12-21T08:00:00+01:00',0],['2026-06-21T08:00:00+02:00',1],['2026-12-21T17:00:00+01:00',0],['2026-06-21T12:00:00+02:00',1]]){
-      await animated.clock.setFixedTime(new Date(time));
-      await animated.waitForFunction(expected=>Math.abs(window.oakGym.getInfo().daylight-expected)<.001,expected);
-    }
-    assert.equal(await animated.evaluate(()=>window.oakGym.getInfo().animationTime),pausedTime,'paused routines advanced');
-    console.log('Bergen seasonal lighting updates while animation is paused.');
+    const afterSpace=await animated.evaluate(()=>window.oakGym.getInfo().animationTime);
+    await animated.waitForFunction(time=>window.oakGym.getInfo().animationTime>time+.05,afterSpace);
     await animated.close();
     // A failed WebGL initialization must not take the functional DOM UI down with it.
     console.log('Normal-motion travel checked; checking WebGL fallback.');

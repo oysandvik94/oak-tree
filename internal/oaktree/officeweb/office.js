@@ -1,6 +1,6 @@
 import { createQuestionPanel } from "./questions.js";
 import { advanceBubble, createActivityTracker } from "./activity.js";
-import { agentState, hash } from "./assets/gym/state.js";
+import { agentState, gymAgents, hash } from "./assets/gym/state.js";
 
 const $ = id => document.getElementById(id);
 const canvas = $("office"), stage = $("stage");
@@ -8,7 +8,7 @@ const actors = new Map(), rosterRows = new Map(), speechNodes = new Map();
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const sourceNames = {task:"CURRENT TASK", session:"CAMPFIRE UPDATE", status:"AGENT STATUS"};
 // Undefined allows automatic selection; null preserves an explicit deselection.
-let selectedID, focusPending = false, paused = reducedMotion.matches;
+let selectedID, focusPending = false;
 let connected = false, polling = false, pollTimer, view = null, renderingError = "";
 let lastRosterSignature = "", orderedAgents = [], sessionSuffixes = new Map();
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -66,6 +66,7 @@ $("chat-clear").addEventListener("click", async () => {
 renderChatLog();
 
 function statusLabel(data) {
+  if(data.spotting)return 'Spotting · Session busy';
   return { working: "Working", question: "Question", ready: "Ready", review: "Review", blocked: "Blocked" }[agentState(data)] || "Unknown";
 }
 function updateSessionSuffixes() {
@@ -97,17 +98,19 @@ function updateRoster() {
   if (signature === lastRosterSignature) return;
   lastRosterSignature = signature;
   updateSessionSuffixes();
-  const counts = { working: 0, question: 0, ready: 0, review: 0, blocked: 0 };
-  for (const actor of orderedAgents) counts[agentState(actor.data)] = (counts[agentState(actor.data)] || 0) + 1;
+  const counts = { working: 0, spotting: 0, question: 0, ready: 0, review: 0, blocked: 0 };
+  for(const {data} of orderedAgents){const state=data.spotting?'spotting':agentState(data);counts[state]=(counts[state]||0)+1;}
   $("roster-count").textContent = String(actors.size);
   $("state-counts").replaceChildren();
-  for (const [state, label] of [["working", "working"], ["question", "questions"], ["ready", "ready"], ["review", "review"], ["blocked", "blocked"], ["unknown", "unknown"]]) {
+  for (const [state, label] of [["working", "working"], ["spotting", "spotting"], ["question", "questions"], ["ready", "ready"], ["review", "review"], ["blocked", "blocked"], ["unknown", "unknown"]]) {
     if (!counts[state]) continue;
     const chip = document.createElement("span");
-    chip.className = `count-chip ${state}`;
+    chip.className = `count-chip ${state==='spotting'?'working':state}`;
     chip.textContent = `${counts[state]} ${label}`;
     $("state-counts").append(chip);
   }
+  const busySessions=new Set(orderedAgents.filter(actor=>actor.data.sessionBusy).map(actor=>actor.data.sessionId));
+  if(busySessions.size){const chip=document.createElement('span');chip.className='count-chip working';chip.textContent=`${busySessions.size} busy ${busySessions.size===1?'session':'sessions'}`;$('state-counts').append(chip);}
   for (const [id, row] of rosterRows) {
     if (!actors.has(id)) { row.remove(); rosterRows.delete(id); }
   }
@@ -294,7 +297,7 @@ async function poll() {
 
 function applyState(payload) {
   if (!payload || !Array.isArray(payload.agents)) throw new Error('Invalid office response');
-  const incoming = new Map(payload.agents.filter(a => typeof a.id === 'string' && typeof a.project === 'string').map(a => [a.id, a]));
+  const incoming = new Map(gymAgents(payload.agents).filter(a => typeof a.id === 'string' && typeof a.project === 'string').map(a => [a.id, a]));
   for (const id of actors.keys()) if (!incoming.has(id)) {actors.delete(id); speechNodes.get(id)?.remove(); speechNodes.delete(id);}
   for (const [id, data] of incoming) {
     if (!actors.has(id)) actors.set(id, {data, bubbleQueue: [], bubble: null, bubbleUntil: 0});
@@ -373,7 +376,6 @@ canvas.addEventListener('keydown',event=>{
   if(event.key.toLowerCase()==='f'){event.preventDefault();view?.focusGym();}
   else if(event.key==='Escape'){event.preventDefault();selectActor(null);}
   else if(event.key==='Enter'){event.preventDefault();const data=actors.get(selectedID)?.data;if(data?.questions?.length)questions.open(data);else openSession();}
-  else if(event.key===' '){event.preventDefault();paused=!paused;view?.setPaused(paused);}
 });
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
 window.addEventListener('pagehide',event=>{clearTimeout(pollTimer);if(!event.persisted)view?.dispose();});

@@ -1,3 +1,6 @@
+import {exercises, trainingSetDuration} from './exercises.js';
+export {trainingSetDuration} from './exercises.js';
+
 const lerp = (a, b, amount) => a + (b - a) * amount;
 const smooth = value => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); };
 const routines = {
@@ -9,9 +12,7 @@ const routines = {
   unknown: ['look-around', 'rest'],
 };
 
-export const trainingSetDuration = identity => 25 + identity % 5;
-
-export function gymPose(state, identity, time, {seated = false, desk = false, equipment, equipmentTime = 0, walking = false, still = false, eventAge = Infinity} = {}) {
+export function gymPose(state, identity, time, {seated = false, desk = false, equipment, equipmentTime = 0, walking = false, still = false, eventAge = Infinity, floorExercise, spotting, reaction} = {}) {
   const clock = time * (.85 + identity % 11 * .03) + identity % 97 * .19;
   const duration = 14 + (identity >>> 4) % 5;
   const choices = seated ? ['drink', 'seated-stretch', 'rest'] : routines[state] || routines.unknown;
@@ -19,7 +20,7 @@ export function gymPose(state, identity, time, {seated = false, desk = false, eq
   let amount = smooth(phase / 1.2) * smooth((duration - 2 - phase) / 1.2);
   const pose = {
     routine: choices[(Math.floor(clock / duration) + (identity >>> 8)) % choices.length],
-    bodyY: seated ? -.32 : 0, bodyZ: 0, breath: Math.sin(clock * 1.8) * .006,
+    bodyY: seated ? -.32 : 0, bodyZ: 0, bodyPitch: 0, bodyRoll: 0, breath: Math.sin(clock * 1.8) * .006,
     sway: Math.sin(clock * .7) * .012, lean: desk ? .12 : .015,
     headYaw: Math.sin(clock * .38) * .16, headPitch: Math.sin(clock * .6) * .025,
     leftShoulderX: 0, rightShoulderX: 0, leftShoulderZ: .045, rightShoulderZ: -.045,
@@ -27,8 +28,17 @@ export function gymPose(state, identity, time, {seated = false, desk = false, eq
     leftHip: seated ? -Math.PI / 2 : 0, rightHip: seated ? -Math.PI / 2 : 0,
     leftKnee: seated ? Math.PI / 2 : 0, rightKnee: seated ? Math.PI / 2 : 0,
     offsetX: 0, facing: 0, stride: 0, weights: false, bottle: false, towel: false,
-    clipboard: false, pageTurn: 0, machineLift: 0, handTargets: null, barHeld: false,
+    clipboard: false, pageTurn: 0, machineLift: 0, handTargets: null, barHeld: false, released: false,
   };
+  if(reaction){if(exercises[reaction.exercise].equipment)equipment=reaction.exercise;else floorExercise=reaction.exercise;}
+  function finish(){
+    if(reaction){
+      const phase=Math.max(0,Math.min(1,(time-reaction.startedAt)/reaction.duration));
+      exercises[reaction.exercise].events[reaction.type](pose,phase);
+      pose.event=reaction.type;pose.routine=`${reaction.exercise}:${reaction.type}`;
+    }
+    return pose;
+  }
   function blend(name, value) { pose[name] = lerp(pose[name], value, amount); }
   function walk(stride) {
     const step = clock * 6;
@@ -44,74 +54,30 @@ export function gymPose(state, identity, time, {seated = false, desk = false, eq
   if (walking) {
     pose.routine = 'walk'; pose.lean = .04; walk(1);
     if (state === 'question' && eventAge < 3) { pose.rightShoulderZ = -2.7; pose.rightElbow = -.4; }
-    return pose;
+    return finish();
+  }
+  if(spotting){
+    pose.routine='spotting';pose.facing=spotting.facing;
+    pose.leftShoulderX=pose.rightShoulderX=-.8;pose.leftElbow=pose.rightElbow=-1.1;
+    pose.lean=spotting.helping ? .28 : .1;pose.headYaw=0;
+    if(spotting.helping){pose.leftShoulderX=pose.rightShoulderX=-1.3;pose.sway=Math.sin(clock*8)*.035;}
+    return finish();
   }
   if (equipment) {
     const workTime = trainingSetDuration(identity) - 3;
     const rep = .5 - .5 * Math.cos(Math.min(Math.max(0, equipmentTime), workTime) / workTime * 8 * Math.PI);
-    pose.routine = equipment; pose.barHeld = true;
-    pose.headYaw *= .25; pose.sway = 0;
-    if (equipment === 'squat-rack') {
-      const bend = rep * .85;
-      pose.leftHip = pose.rightHip = -bend;
-      pose.leftKnee = pose.rightKnee = bend * 2;
-      pose.bodyY = -.93 * (1 - Math.cos(bend));
-      pose.lean = rep * .24;
-      pose.handTargets = [[-.75,.69,-.12],[.75,.69,-.12]];
-    } else if (equipment === 'deadlift-platform') {
-      const resting = equipmentTime >= workTime, bend = resting ? 0 : 1 - rep;
-      pose.barHeld = !resting;
-      pose.leftHip = pose.rightHip = -bend * 1.1;
-      pose.leftKnee = pose.rightKnee = bend * 1.5;
-      pose.bodyY = .44 * Math.cos(bend * 1.1) + .49 * Math.cos(bend * .4) - .93;
-      pose.bodyZ = -.44 * Math.sin(bend * 1.1) + .49 * Math.sin(bend * .4);
-      pose.lean = bend * .72;
-      pose.leftShoulderX = pose.rightShoulderX = -pose.lean;
-      pose.leftShoulderZ = pose.rightShoulderZ = 0;
-      pose.leftElbow = pose.rightElbow = 0;
-    } else if (equipment === 'pec-deck') {
-      pose.bodyY = -.32; pose.lean = 0;
-      pose.leftHip = pose.rightHip = -Math.PI / 2;
-      pose.leftKnee = pose.rightKnee = Math.PI / 2;
-      pose.leftShoulderX = pose.rightShoulderX = -Math.PI / 2;
-      pose.leftShoulderZ = -1.2 + rep * 1.35;
-      pose.rightShoulderZ = -pose.leftShoulderZ;
-      pose.leftElbow = pose.rightElbow = -.35;
-      pose.machineLift = rep;
-    }
-    return pose;
+    pose.routine = equipment; pose.headYaw *= .25; pose.sway = 0;
+    exercises[equipment].sample(pose,{rep,resting:equipmentTime>=workTime});
+    return finish();
   }
   if ((state === 'question' || state === 'ready') && eventAge < 3) {
     pose.routine = state === 'question' ? 'hand-raise' : seated ? 'seated-stretch' : 'stretch';
     amount = Math.max(amount, smooth(eventAge / .3) * smooth((3 - eventAge) / .5));
   }
   const lift = .5 + .5 * Math.sin(clock * 2.1);
+  if(state==='working'&&pose.routine!=='towel'&&floorExercise)pose.routine=floorExercise;
+  if(exercises[pose.routine]){exercises[pose.routine].sample(pose,{rep:lift,amount});return finish();}
   switch (pose.routine) {
-    case 'curls':
-      pose.weights = amount > .15;
-      blend('leftElbow', -.3 - lift * 2);
-      blend('rightElbow', -.3 - (1 - lift) * 2);
-      break;
-    case 'presses':
-      pose.weights = amount > .15;
-      blend('leftShoulderX', -1.9 - lift * 1.1);
-      blend('rightShoulderX', -1.9 - lift * 1.1);
-      blend('leftElbow', -1.1 + lift * .9);
-      blend('rightElbow', -1.1 + lift * .9);
-      blend('headPitch', -.08);
-      break;
-    case 'squats': {
-      const bend = lift * .75 * amount;
-      pose.leftHip = pose.rightHip = -bend;
-      pose.leftKnee = pose.rightKnee = bend * 2;
-      pose.bodyY = -.9 * (1 - Math.cos(bend));
-      blend('lean', lift * .3);
-      blend('leftShoulderX', -.9);
-      blend('rightShoulderX', -.9);
-      blend('leftElbow', -.8);
-      blend('rightElbow', -.8);
-      break;
-    }
     case 'towel':
       pose.towel = amount > .15;
       blend('leftShoulderX', -1.2);
@@ -181,7 +147,7 @@ export function gymPose(state, identity, time, {seated = false, desk = false, eq
       blend('lean', seated ? -.06 : .035);
       break;
   }
-  return pose;
+  return finish();
 }
 
 export function applyGymPose(model, pose, amount = 1) {
@@ -191,7 +157,7 @@ export function applyGymPose(model, pose, amount = 1) {
   model.body.position.y = lerp(model.body.position.y, pose.bodyY, amount);
   model.body.position.z = lerp(model.body.position.z, pose.bodyZ, amount);
   model.body.scale.y = 1 + pose.breath;
-  rotate(model.body, 0, 0, pose.sway);
+  rotate(model.body, pose.bodyPitch, 0, pose.sway + pose.bodyRoll);
   rotate(model.torso, pose.lean);
   rotate(model.head, pose.headPitch, pose.headYaw);
   if (pose.handTargets) {
