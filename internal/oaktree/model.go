@@ -39,6 +39,7 @@ type CampfireMessage struct {
 	Kind            string    `json:"kind"`
 	Message         string    `json:"message"`
 	SourceSessionID string    `json:"source_session_id,omitempty"`
+	AgentRole       string    `json:"agent_role,omitempty"`
 	Project         string    `json:"project,omitempty"`
 }
 

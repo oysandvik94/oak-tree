@@ -12,9 +12,9 @@ export function gymAgents(data) {
   const sessions = new Map();
   for(const agent of data)if(agent.sessionId){if(!sessions.has(agent.sessionId))sessions.set(agent.sessionId,[]);sessions.get(agent.sessionId).push(agent);}
   return data.map(agent=>{
-    const peers=sessions.get(agent.sessionId)||[],active=peers.find(peer=>peer.id!==agent.id&&['architect','junior'].includes(peer.role)&&agentState(peer)==='working');
-    const spotting=agentState(agent)==='ready'&&['architect','junior'].includes(agent.role)&&active?active.id:null;
-    return {...agent,spotting,sessionBusy:peers.some(peer=>agentState(peer)==='working')};
+    const peers=sessions.get(agent.sessionId)||[],partner=['architect','junior'].includes(agent.role)?peers.find(peer=>peer.id!==agent.id&&['architect','junior'].includes(peer.role)):null;
+    const spotting=agentState(agent)==='ready'&&partner&&agentState(partner)==='working'?partner.id:null;
+    return {...agent,partnerId:partner?.id,spotting,sessionBusy:peers.some(peer=>agentState(peer)==='working')};
   });
 }
 
@@ -23,6 +23,10 @@ export function agentState(data) {
   if (data.sessionState === 'review' || data.sessionState === 'blocked') return data.sessionState;
   if(data.spotting)return 'working';
   return ['working', 'question', 'ready'].includes(data.status) ? data.status : 'unknown';
+}
+
+export function todoLoad(todo) {
+  return todo ? {completed:todo.completed,level:Math.min(4,todo.completed)} : null;
 }
 
 export function hash(value) {
@@ -65,7 +69,8 @@ export function stationFor(layout, state, index) {
   const room = layout[state];
   if (state === 'ready' && index < 2) return {kind: 'bench', position: {x: room.x + (index ? .65 : -.65), z: room.front - 1.1}};
   if (state === 'review' && index < 2) return {kind: 'desk', position: {x: room.x + (index ? .7 : -.7), z: room.front - 1.5}};
-  return {kind: 'floor', position: slotFor(layout, state, index - (state === 'ready' || state === 'review' ? 2 : 0))};
+  if (state === 'ready') return {kind:'floor',position:{x:room.x-2.1+(index-2)%4*1.4,z:room.back+3.1+Math.floor((index-2)/4)*2}};
+  return {kind: 'floor', position: slotFor(layout, state, index - (state === 'review' ? 2 : 0))};
 }
 
 // Room-to-room travel uses the shared corridor; furniture approaches are added below.
@@ -79,11 +84,23 @@ export function isEquipment(station) {
 }
 
 export function stationRoute(layout, start, station) {
-  const path = [], sofa = layout.ready, sofaFront = sofa.front - .3;
+  const path = [], sofa = layout.ready, sofaFront = sofa.front - .3, training = layout.working;
+  const inTraining = point => point.x > training.x-training.width/2 && point.x < training.x+training.width/2 && point.z >= training.back && point.z <= training.front;
   let cursor = start;
   function visit(point) {
     if (Math.hypot(point.x - cursor.x, point.z - cursor.z) > .01) path.push(point);
     cursor = point;
+  }
+  function travelTo(entry) {
+    if (!inTraining(cursor)) { routeTo(cursor,entry,layout.corridor).forEach(visit); return; }
+    // Stay on the bay aisles for training trips; only room changes need the hallway.
+    const internal = inTraining(entry), clearFloor = layout.equipment.every(item => cursor.z >= item.front.z);
+    const aisles = layout.equipment.flatMap(item => [item.position.x-2.3,item.position.x+2.3]);
+    const lane = clearFloor ? (internal ? entry.x : cursor.x) : aisles.reduce((nearest,x) => Math.abs(x-cursor.x) < Math.abs(nearest-cursor.x) ? x : nearest);
+    const cross = internal ? entry.z : layout.corridor;
+    visit({x:lane,z:cursor.z}); visit({x:lane,z:cross});
+    if (!internal) visit({x:entry.x,z:cross});
+    visit(entry);
   }
   // Use actual coordinates: an agent can change status again before arriving.
   const leaving = layout.equipment.find(item => Math.abs(cursor.x-item.position.x)<1.7 && cursor.z>=item.position.z-(item.kind==='bench-press'?2.6:1.6) && cursor.z<=item.front.z+.01);
@@ -101,12 +118,12 @@ export function stationRoute(layout, start, station) {
   if(station.kind==='spotter'&&station.equipmentId){
     const machine=layout.equipment.find(item=>item.id===station.equipmentId),side=station.position.x<machine.position.x?-1:1;
     const aisle=machine.position.x+side*2.3;
-    routeTo(cursor,{x:aisle,z:machine.front.z},layout.corridor).forEach(visit);
+    travelTo({x:aisle,z:machine.front.z});
     visit({x:aisle,z:station.position.z});visit(station.position);return path;
   }
   const entry = isEquipment(station) ? station.approach : station.kind === 'bench'
     ? {x: sofa.x + (station.position.x < sofa.x ? -2.2 : 2.2), z: sofaFront} : station.position;
-  routeTo(cursor, entry, layout.corridor).forEach(visit);
+  travelTo(entry);
   if (isEquipment(station)) visit(station.front);
   if (station.kind === 'bench') visit({x: station.position.x, z: sofaFront});
   visit(station.position);
@@ -116,7 +133,7 @@ export function stationRoute(layout, start, station) {
 export function trainingRotations(workers, equipment, time, occupants = workers, {starting = new Set(), paused = false} = {}) {
   const occupied = new Set(workers.map(worker => worker.station.id));
   const changes = [];
-  const due = workers.filter(worker => !worker.event && (!worker.path.length || starting.has(worker.data.id)) && time >= worker.rotationAt && (!paused || starting.has(worker.data.id)))
+  const due = workers.filter(worker => !worker.event && !worker.partnerMoment && (!worker.path.length || starting.has(worker.data.id)) && time >= worker.rotationAt && (!paused || starting.has(worker.data.id)))
     .sort((a,b) => a.rotationAt - b.rotationAt || a.data.id.localeCompare(b.data.id));
   for (const worker of due) {
     if (isEquipment(worker.station)) {

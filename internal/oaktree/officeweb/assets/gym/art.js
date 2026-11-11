@@ -52,6 +52,7 @@ function architecture(room){
  const c=document.createElement('canvas');c.width=128;c.height=96;const a=c.getContext('2d');a.fillStyle='#33495d';a.fillRect(0,0,128,96);for(let y=0;y<96;y+=8){a.fillStyle=['#263d55','#2b4259','#344e61','#426070','#4b6d78','#577b82'][Math.min(5,Math.floor(y/16))];a.fillRect(0,y,128,8)}for(let i=0;i<35;i++){a.fillStyle='#82979b';a.fillRect(Math.floor(random()*128),Math.floor(random()*50),1,1)}for(let i=0;i<12;i++){const h=10+random()*28;a.fillStyle=i%2?'#223c48':'#29434c';a.fillRect(i*12,96-h,9,h);for(let yy=96-h+5;yy<94;yy+=6){a.fillStyle='#ac9963';a.fillRect(i*12+3,yy,2,2)}}const t=new T.CanvasTexture(c);t.colorSpace=T.SRGBColorSpace;t.magFilter=T.NearestFilter;const glass=new T.MeshStandardMaterial({map:t,emissiveMap:t,emissive:'#ffffff',emissiveIntensity:.55,roughness:.4});box(3.35,2.2,.08,3.2,2.7,-4.71,glass,wallRoot);
  for(const x of [1.48,3.2,4.92])box(.11,2.42,.18,x,2.7,-4.6,iron,wallRoot);for(const y of [1.52,2.7,3.88])box(3.55,.1,.18,3.2,y,-4.6,iron,wallRoot);box(3.8,.16,.53,3.2,1.46,-4.52,woodLight,wallRoot);
  pixelSign(-3.1,3.65,-4.63,3.65,.85,wallRoot);
+ decal('NO CARDIO','IRON ONLY',left+4.8,3.65,-4.63,2.8,.8,{font:14,small:8,parent:wallRoot});
  // Conduit and warm wall lamps keep the expanded wing in the existing oak-and-iron palette.
  box(width-1,.045,.045,0,3.05,-4.63,iron,wallRoot);for(const x of [left+.8,.1,right-.7]){box(.045,.6,.045,x,3.32,-4.58,iron,wallRoot);box(.42,.16,.37,x,3.64,-4.47,dark,wallRoot);box(.29,.07,.23,x,3.52,-4.42,warm,wallRoot);}
  box(width-.1,.07,.18,0,-.015,front,woodLight);box(.18,.07,depth,right,-.015,room.z,woodLight);
@@ -129,6 +130,7 @@ function batch(root){root.updateMatrixWorld(true);const buckets=new Map(),invers
   character();
   const root=athlete;dynamic.remove(root);root.position.set(0,0,0);root.rotation.y=0;
   const weights=[leftArm.weight,rightArm.weight];
+  const plates=[leftArm,rightArm].map(arm=>plate(0,-.41,.025,.32,'#506b59',arm.elbow));
   const drink=group(0,-.41,.09,rightArm.elbow);bottle(0,-.14,0,drink);
   const handTowel=group(0,-.41,.09,leftArm.elbow);towel(0,-.08,0,.45,handTowel);
   const clipboard=group(0,-.41,.18,leftArm.elbow);clipboard.rotation.x=-.6;
@@ -142,8 +144,10 @@ function batch(root){root.updateMatrixWorld(true);const buckets=new Map(),invers
    for(const mesh of [...part.children]){if(!mesh.isMesh)continue;mesh.updateMatrix();if(!bins.has(mesh.material))bins.set(mesh.material,[]);bins.get(mesh.material).push(mesh.matrix.clone());part.remove(mesh);}
    for(const [material,matrices] of bins){const mesh=new T.InstancedMesh(unit,material,matrices.length);matrices.forEach((m,i)=>mesh.setMatrixAt(i,m));mesh.castShadow=true;mesh.receiveShadow=true;part.add(mesh);}
   }
+  const chalk=group(0,1.25,.4,root);
+  for(let i=0;i<6;i++)box(.045,.045,.045,0,0,0,ivory,chalk);
   seed=previousSeed;
-  return {root,body,torso,head,leftArm,rightArm,leftLeg,rightLeg,weights,bottle:drink,towel:handTowel,clipboard,page,shirt:characterCloth};
+  return {root,body,torso,head,leftArm,rightArm,leftLeg,rightLeg,weights,plates,chalk,bottle:drink,towel:handTowel,clipboard,page,shirt:characterCloth};
  }
  return {training,actor,box,group,mat,textured,decal,plant,towel,bottle,plate,dumbbell,batch,wood,woodLight,rubber,cloth,iron,dark,edge,gold,ivory,warm,unit};
 }

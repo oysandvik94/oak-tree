@@ -6,8 +6,10 @@ import {createTrainingEquipment} from './equipment.js';
 import {daylightAt} from './lighting.js';
 import {exercises, floorExercises, shuffled, validateExercises} from './exercises.js';
 import {createGymEventTracker} from './events.js';
-import {gymPose, applyGymPose, trainingSetDuration} from './motion.js';
-import {zones, agentState, hash, layoutFor, stationFor, stationRoute, isEquipment, trainingRotations} from './state.js';
+import {gymPose, applyGymPose, trainingSetDuration, gymTravelSpeed} from './motion.js';
+import {zones, agentState, hash, layoutFor, stationFor, stationRoute, isEquipment, trainingRotations, todoLoad} from './state.js';
+import {recoveryOrder, updatePartners} from './partners.js';
+import {placeOverlays, positionOverlay} from './overlays.js';
 
 export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame, onError, reducedMotion}) {
   validateExercises();
@@ -39,7 +41,8 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
   const fill = new T.DirectionalLight('#729dbd', .85); fill.position.set(15, 10, -8); scene.add(fill);
   const actors = new Map(), capacity = {working: 6, question: 6, ready: 6, review: 6, blocked: 6};
   const eventTracker=createGymEventTracker();
-  let art, world, layout, equipment, roomLights, cameraGoal, selected, hovered;
+  let art, world, layout, equipment, roomLights, cameraGoal, selected;
+  let labelBoxes=[],bodyBoxes=[];
   let connected = false, fitted = true;
   let width = 1, height = 1, extent = 20, lastTime = performance.now(), time = 0, pointer;
   let disposed = false, lostContext = false, dirty = true, frameID;
@@ -156,8 +159,11 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
     for(const side of [-1,1]) {art.box(.9,.025,.035,0,0,side*.5,art.gold,selection);art.box(.035,.025,1,side*.47,0,0,art.gold,selection);}
     const band=art.box(.27,.075,.38,0,-.07,0,art.mat('#ffffff'),model.rightArm.shoulder);
     const label=document.createElement('button');label.type='button';label.className='gym-agent-label';label.hidden=true;label.dataset.overlayAgent=data.id;
+    const badge=document.createElement('span');badge.className='label-role';badge.setAttribute('aria-hidden','true');
+    const name=document.createElement('span');name.className='label-name';
+    const stem=document.createElement('span');stem.className='overlay-stem';stem.setAttribute('aria-hidden','true');label.append(badge,name,stem);
     label.addEventListener('click',()=>onSelect(data.id,true));label.addEventListener('dblclick',()=>onOpen(data.id));labels.append(label);
-    return {...model,data,identity,station,position:{...position},home:position,path:[],marker,selection,band,label,arrivedAt:time,rotationAt:time,lastEquipment:null,exerciseOrder:[],floorExercise:shuffled(floorExercises)[0],floorChangeAt:0,reactionSince:-Infinity,event:null,eventQueue:[],pendingStation:null};
+    return {...model,data,identity,station,position:{...position},home:position,path:[],marker,selection,band,label,arrivedAt:time,rotationAt:time,lastEquipment:null,exerciseOrder:[],floorExercise:shuffled(floorExercises)[0],floorChangeAt:0,reactionSince:-Infinity,event:null,eventQueue:[],pendingStation:null,load:todoLoad(data.todo)||{completed:null,level:0}};
   }
   function advanceEvent(actor){
     if(actor.event&&time<actor.event.startedAt+actor.event.duration)return;
@@ -195,7 +201,13 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
     }
   }
   function sync(data) {
-    const notices=eventTracker.observe(data),queued=new Set();
+    const notices=eventTracker.observe(data),queued=new Set(),byId=new Map(data.map(agent=>[agent.id,agent]));
+    function notify(actor,notice){
+      const item=byId.get(actor.data.id),partner=byId.get(item.partnerId);
+      if(notice.type==='session_ready'&&partner&&agentState(item)==='ready'&&agentState(partner)==='ready'){
+        if(!reducedMotion)actor.pendingBump=true;
+      }else queueEvent(actor,notice.type);
+    }
     dirty=true;
     const counts=Object.fromEntries(zones.map(z=>[z.id,0]));let rebuild=!world;
     for(const item of data){const state=agentState(item);if(state in counts)counts[state]++;}
@@ -203,9 +215,9 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
     if(rebuild)buildWorld();
     const incoming=new Set(data.map(a=>a.id));
     for(const [id,actor] of actors)if(!incoming.has(id)){world.remove(actor.root);actor.shirt.map.dispose();actor.shirt.dispose();actor.label.remove();actors.delete(id);}
-    for(const notice of notices)if(actors.has(notice.agentId)){queueEvent(actors.get(notice.agentId),notice.type);queued.add(notice.agentId);}
+    for(const notice of notices)if(actors.has(notice.agentId)){notify(actors.get(notice.agentId),notice);queued.add(notice.agentId);}
     const indexes={},starting=new Set();
-    for(const item of [...data].sort((a,b)=>a.id.localeCompare(b.id))){
+    for(const item of recoveryOrder(data)){
       const state=agentState(item),index=indexes[state]||0;indexes[state]=index+1;
       let actor=actors.get(item.id);
       const previousState=actor?agentState(actor.data):null;
@@ -216,20 +228,23 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
       if(!actor){actor=makeActor(item,station);actors.set(item.id,actor);}
       if(state==='working')actor.floorStation={...floor,id:`floor:${item.id}`};
       if(Math.hypot(actor.home.x-station.position.x,actor.home.z-station.position.z)>.01||previousState!==state||actor.station.kind!==station.kind)assignStation(actor,station);
-      if(previousState!==state)actor.reactionSince=time;
+      if(previousState!==state||actor.data.spotting!==item.spotting){actor.reactionSince=time;actor.partnerMoment=null;actor.carryingPlate=false;actor.setupUntil=null;}
       if(state==='working'&&!item.spotting&&(previousState!=='working'||actor.data.spotting)){actor.rotationAt=time;starting.add(item.id);}
-      actor.data=item;actor.state=state;
+      actor.data=item;actor.state=state;actor.load=todoLoad(item.todo)||actor.load;
+      actor.weights.forEach(weight=>weight.scale.setScalar(.9*(1+actor.load.level*.12)));
       if(reducedMotion){actor.position={...actor.home};actor.path=[];}
       actor.marker.material=art.mat(zones.find(z=>z.id===state)?.color||'#a5a5a5');
       actor.selection.visible=item.id===selected;
       actor.band.visible=Boolean(item.group);if(item.group)actor.band.material=art.mat(new T.Color().setHSL((hash(item.group.id)%360)/360,.4,.6).getHex());
-      actor.label.textContent=`${item.name||item.project} · ${item.role||'Agent'}`;
-      actor.label.title=`${item.branch||'Root session'}${item.group?' · '+item.group.name:''}`;
+      actor.label.children[0].textContent=(item.role||'Agent').slice(0,1).toUpperCase();
+      actor.label.children[1].textContent=item.name||item.branch||item.project;
+      actor.label.title=`${item.name||item.project} · ${item.role||'Agent'} · ${item.project} · ${item.branch||'Root session'}${item.group?' · '+item.group.name:''}`;
+      actor.label.setAttribute('aria-label',actor.label.title);
       actor.label.dataset.state=state;actor.label.setAttribute('aria-pressed',String(item.id===selected));
     }
     if(starting.size)updateTraining(starting);
     updateSpotters();
-    for(const notice of notices)if(!queued.has(notice.agentId)&&actors.has(notice.agentId))queueEvent(actors.get(notice.agentId),notice.type);
+    for(const notice of notices)if(!queued.has(notice.agentId)&&actors.has(notice.agentId))notify(actors.get(notice.agentId),notice);
     if(rebuild&&fitted)focusGym();
   }
   function select(id, focus=false) {
@@ -263,20 +278,27 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
     return {x:(point.x+1)*width/2,y:(1-point.y)*height/2,visible:point.z>=-1&&point.z<=1&&Math.abs(point.x)<1.05&&Math.abs(point.y)<1.05};
   }
   function hit(event){const rect=canvas.getBoundingClientRect();ndc.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);raycaster.setFromCamera(ndc,camera);for(const hit of raycaster.intersectObjects([...actors.values()].map(a=>a.root),true)){let node=hit.object;while(node&&!node.userData.agentId)node=node.parent;if(node)return node.userData.agentId;}return null;}
-  function overlayAgent(){return actors.has(hovered)?hovered:selected;}
-  function pointerMove(event){
-    const overlay=event.target.closest?.('.gym-agent-label, .speech-bubble');
-    const id=event.buttons?null:overlay?.dataset.overlayAgent||(event.target===canvas?hit(event):null);
-    if(id!==hovered){hovered=id;dirty=true;}
+  function updateLabels(){
+    const visible=[];
+    for(const actor of actors.values()){
+      const anchor=project(actor.data.id,.08);actor.label.hidden=!anchor.visible;
+      if(anchor.visible)visible.push({actor,anchor});
+    }
+    bodyBoxes=visible.map(({actor,anchor})=>{
+      const head=screenPoint(actor.head.localToWorld(projected.set(0,.5,0)));
+      return {x:(anchor.x+head.x)/2,y:Math.min(head.y,anchor.y)-3,width:Math.abs(head.x-anchor.x)+1.8*height*camera.zoom/(2*extent),height:Math.abs(anchor.y-head.y)+6};
+    });
+    labelBoxes=placeOverlays(visible.map(({actor,anchor})=>({node:actor.label,anchor,x:anchor.x,y:anchor.y+7,width:actor.label.offsetWidth,height:actor.label.offsetHeight})),{width,height,occupied:bodyBoxes});
+    for(const box of labelBoxes)positionOverlay(box.node,box,box.anchor);
   }
-  function pointerLeave(){hovered=null;pointer=null;dirty=true;}
+  function pointerLeave(){pointer=null;}
   function pointerDown(event){pointer={x:event.clientX,y:event.clientY,id:event.pointerId};}
   function pointerUp(event){if(pointer&&event.pointerId===pointer.id&&Math.hypot(event.clientX-pointer.x,event.clientY-pointer.y)<5&&event.button===0)onSelect(hit(event),false);pointer=null;}
   function doubleClick(event){if(event.button===0){const id=hit(event);if(id)onOpen(id);}}
   function stopCameraTransition(){cameraGoal=null;fitted=false;}
   function contextLost(event){event.preventDefault();lostContext=true;onError('3D rendering stopped. Reload this page to restore it; your agents are still available in the list.');}
   canvas.addEventListener('pointerdown',pointerDown);canvas.addEventListener('pointerup',pointerUp);canvas.addEventListener('dblclick',doubleClick);canvas.addEventListener('webglcontextlost',contextLost);
-  stage.addEventListener('pointermove',pointerMove);stage.addEventListener('pointerleave',pointerLeave);
+  stage.addEventListener('pointerleave',pointerLeave);
   controls.addEventListener('start',stopCameraTransition);
   controls.addEventListener('change',()=>dirty=true);
   const observer=new ResizeObserver(resize);observer.observe(stage);
@@ -285,7 +307,7 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
     const active=!reducedMotion&&connected;
     let walking=false, facing=actor.root.rotation.y;
     if(active&&!actor.event) {
-      let remaining=dt*2.2;
+      let remaining=dt*gymTravelSpeed(actor.state);
       while(actor.path.length&&remaining>0) {
         const p=actor.path[0],dx=p.x-actor.position.x,dz=p.z-actor.position.z,d=Math.hypot(dx,dz);
         walking=true;facing=isEquipment(actor.station)&&actor.path.length===1?0:Math.atan2(dx,dz);
@@ -295,10 +317,12 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
     }
     if(walking&&!actor.path.length){
       actor.arrivedAt=time;
-      actor.rotationAt=time+(isEquipment(actor.station)?trainingSetDuration(actor.identity):5+actor.identity%4);
+      if(isEquipment(actor.station)){actor.setupUntil=time+2.1;actor.arrivedAt=actor.setupUntil;}
+      actor.rotationAt=actor.arrivedAt+(isEquipment(actor.station)?trainingSetDuration(actor.identity):5+actor.identity%4);
       if(actor.state==='ready')actor.reactionSince=time;
     }
-    if(active&&!actor.event&&actor.state==='working'&&!actor.data.spotting&&!isEquipment(actor.station)&&time>=actor.floorChangeAt){
+    if(actor.setupUntil&&time>=actor.setupUntil){actor.setupUntil=null;actor.carryingPlate=false;}
+    if(active&&!actor.event&&!actor.partnerMoment&&actor.state==='working'&&!actor.data.spotting&&!isEquipment(actor.station)&&time>=actor.floorChangeAt){
       actor.floorExercise=shuffled(floorExercises.filter(id=>id!==actor.floorExercise))[0];actor.floorChangeAt=time+16;
     }
     const lifter=actors.get(actor.data.spotting);
@@ -308,6 +332,8 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
       equipment:isEquipment(actor.station)&&!actor.path.length?actor.station.kind:null,equipmentTime:time-actor.arrivedAt,
       walking,still:reducedMotion,eventAge:time-actor.reactionSince,floorExercise:actor.floorExercise,
       spotting:lifter?{facing:actor.station.facing,helping:lifter.event?.type==='tool_failed'}:null,reaction:actor.event,
+      partnerMoment:actor.partnerMoment,company:actor.company,carryingPlate:actor.carryingPlate?actor.carryHand:null,
+      setup:actor.setupUntil?1-(actor.setupUntil-time)/2.1:undefined,
     });
     actor.routine=pose.routine;actor.localWalking=active&&!actor.event&&!walking&&pose.stride>.1;
     if(!walking&&!actor.path.length&&active&&!actor.event)actor.position={x:actor.home.x+pose.offsetX,z:actor.home.z};
@@ -327,34 +353,35 @@ export function createGymView({canvas, stage, labels, onSelect, onOpen, onFrame,
     controls.update();
     if((reducedMotion||!connected||!actors.size)&&!dirty&&!cameraGoal){onFrame(now);return;}
     if(!reducedMotion&&connected)time+=dt;
-    if(!reducedMotion&&connected){actors.forEach(advanceEvent);updateTraining();updateSpotters();}
+    if(!reducedMotion&&connected){actors.forEach(advanceEvent);updateTraining();updateSpotters();updatePartners(actors,time);}
     if(connected||reducedMotion){
       equipment.forEach(model=>model.update(null));
       actors.forEach(actor=>{
         const pose=animateActor(actor,dt);
-        if(isEquipment(actor.station)&&!actor.path.length&&(pose.routine===actor.station.kind||actor.event?.exercise===actor.station.kind))equipment.get(actor.station.id).update(actor,pose);
+        if(isEquipment(actor.station)&&!actor.path.length&&(pose.routine===actor.station.kind||actor.event?.exercise===actor.station.kind||actor.setupUntil))equipment.get(actor.station.id).update(actor,pose);
       });
     }
     if(cameraGoal){const k=1-Math.exp(-dt*6);camera.position.lerp(cameraGoal.position,k);controls.target.lerp(cameraGoal.target,k);camera.zoom=T.MathUtils.lerp(camera.zoom,cameraGoal.zoom,k);camera.updateProjectionMatrix();if(camera.position.distanceTo(cameraGoal.position)<.01&&Math.abs(camera.zoom-cameraGoal.zoom)<.005)cameraGoal=null;}
     camera.lookAt(controls.target);renderer.render(scene,camera);
-    actors.forEach(actor=>{const p=project(actor.data.id,2.6);actor.label.hidden=!p.visible||actor.data.id!==overlayAgent();actor.label.style.left=`${p.x}px`;actor.label.style.top=`${p.y}px`;});
+    updateLabels();
     dirty=false;onFrame(now);
   }
   buildWorld();camera.position.set(25,25,35);focusGym();frameID=requestAnimationFrame(frame);
   return {
-    sync,select,project,focusGym,overlayAgent,
+    sync,select,project,focusGym,overlayBounds:()=>[...bodyBoxes,...labelBoxes],
     setConnected(value){connected=value;dirty=true;},
     getInfo(){
       return {
         agents:actors.size,zones:zones.length,daylight,animationTime:time,capacity:{...capacity},
         positions:Object.fromEntries([...actors].map(([id,actor])=>[id,{
           ...actor.position,state:actor.state,routine:actor.routine,station:actor.station.kind,stationId:actor.station.id||null,spotting:actor.data.spotting||null,status:actor.data.status,event:actor.event?.type||null,eventExercise:actor.event?.exercise||null,
+          completedTodos:actor.load.completed,loadLevel:actor.load.level,interaction:actor.partnerMoment?.type||null,company:Boolean(actor.company),carryingPlate:Boolean(actor.carryingPlate),
           moving:actor.path.length>0||Boolean(actor.localWalking),screen:screenPoint(actor.torso.localToWorld(projected.set(0,.35,.23))),
         }])),
-        equipment:layout.equipment.map(({id,kind,position})=>({id,kind,...position,occupant:[...actors.values()].find(actor=>actor.station.id===id)?.data.id||null})),
+        equipment:layout.equipment.map(({id,kind,position})=>({id,kind,...position,loadLevel:equipment.get(id).loadLevel,occupant:[...actors.values()].find(actor=>actor.station.id===id)?.data.id||null})),
         drawCalls:renderer.info.render.calls,
       };
     },
-    dispose(){stage.removeEventListener('pointermove',pointerMove);stage.removeEventListener('pointerleave',pointerLeave);disposed=true;cancelAnimationFrame(frameID);observer.disconnect();controls.dispose();canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('dblclick',doubleClick);canvas.removeEventListener('webglcontextlost',contextLost);disposeTree(world);envMap.dispose();renderer.dispose();labels.replaceChildren();},
+    dispose(){stage.removeEventListener('pointerleave',pointerLeave);disposed=true;cancelAnimationFrame(frameID);observer.disconnect();controls.dispose();canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('dblclick',doubleClick);canvas.removeEventListener('webglcontextlost',contextLost);disposeTree(world);envMap.dispose();renderer.dispose();labels.replaceChildren();},
   };
 }

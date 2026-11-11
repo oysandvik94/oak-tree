@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -97,13 +98,28 @@ func officeActivityForAgent(agent officeAgentState, at time.Time) officeActivity
 			entry.Text = status
 		}
 	}
-	key, _ := json.Marshal([]string{entry.AgentID, entry.Source, entry.QuestionID, entry.Text})
-	sum := sha256.Sum256(key)
-	entry.Key = hex.EncodeToString(sum[:])
+	entry.Key = officeActivityKey(entry.AgentID, entry.Source, entry.QuestionID, entry.Text)
 	if text := []rune(entry.Text); len(text) > 4000 {
 		entry.Text = string(text[:4000]) + "…"
 	}
 	return entry
+}
+
+func officeActivityKey(parts ...string) string {
+	key, _ := json.Marshal(parts)
+	sum := sha256.Sum256(key)
+	return hex.EncodeToString(sum[:])
+}
+
+func officeCampfireActivity(post CampfireMessage, name string) officeActivityEntry {
+	id, author := post.SourceSessionID, name
+	if post.AgentRole != "" {
+		id += ":" + post.AgentRole
+		author += " · " + post.AgentRole
+	}
+	at := post.At.UTC().Format(time.RFC3339Nano)
+	return officeActivityEntry{AgentID: id, Author: author, Source: "CAMPFIRE UPDATE", Text: post.Message, Time: at,
+		Key: officeActivityKey("campfire", id, at, post.Kind, post.Message)}
 }
 
 func updateOfficeActivityHistory(store *Store, snapshot *officeSnapshot) ([]officeActivityEntry, error) {
@@ -125,8 +141,14 @@ func updateOfficeActivityHistory(store *Store, snapshot *officeSnapshot) ([]offi
 			at = time.Now()
 		}
 		changed := false
+		incoming := append([]officeActivityEntry(nil), snapshot.campfire...)
 		for _, agent := range snapshot.Agents {
-			entry := officeActivityForAgent(agent, at)
+			if agent.ActivitySource == "session" && len(agent.Questions) == 0 {
+				continue
+			}
+			incoming = append(incoming, officeActivityForAgent(agent, at))
+		}
+		for _, entry := range incoming {
 			if strings.TrimSpace(entry.Text) == "" {
 				continue
 			}
@@ -141,6 +163,13 @@ func updateOfficeActivityHistory(store *Store, snapshot *officeSnapshot) ([]offi
 		if len(history.Seen) > maxOfficeActivitySeen {
 			history.Seen = history.Seen[len(history.Seen)-maxOfficeActivitySeen:]
 			changed = true
+		}
+		if changed {
+			sort.SliceStable(history.Entries, func(i, j int) bool {
+				a, _ := time.Parse(time.RFC3339Nano, history.Entries[i].Time)
+				b, _ := time.Parse(time.RFC3339Nano, history.Entries[j].Time)
+				return a.Before(b)
+			})
 		}
 		if len(history.Entries) > maxOfficeActivityEntries {
 			history.Entries = history.Entries[len(history.Entries)-maxOfficeActivityEntries:]

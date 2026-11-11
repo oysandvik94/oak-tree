@@ -12,7 +12,7 @@ import (
 
 func TestOfficeGymAssets(t *testing.T) {
 	handler := officeHandler(NewStore(t.TempDir()), 4321, "token", nil)
-	for _, path := range []string{"/assets/gym/view.js", "/assets/gym/art.js", "/assets/gym/state.js", "/assets/gym/motion.js", "/assets/gym/equipment.js", "/assets/gym/exercises.js", "/assets/gym/events.js", "/assets/gym/font.js", "/assets/gym/lighting.js", "/assets/gym/vendor/three.module.js", "/assets/gym/vendor/OrbitControls.js", "/assets/gym/vendor/RoomEnvironment.js"} {
+	for _, path := range []string{"/assets/gym/view.js", "/assets/gym/art.js", "/assets/gym/state.js", "/assets/gym/motion.js", "/assets/gym/equipment.js", "/assets/gym/exercises.js", "/assets/gym/events.js", "/assets/gym/partners.js", "/assets/gym/overlays.js", "/assets/gym/font.js", "/assets/gym/lighting.js", "/assets/gym/vendor/three.module.js", "/assets/gym/vendor/OrbitControls.js", "/assets/gym/vendor/RoomEnvironment.js"} {
 		t.Run(path, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:4321"+path, nil)
 			w := httptest.NewRecorder()
@@ -78,6 +78,7 @@ for(const station of layout.equipment){
  for(const target of layout.equipment){
   const path=stationRoute(layout,station.position,target);
   assert(path.at(-1)===target.position,'equipment route misses its destination');
+  assert(path.every(point=>point.x>room.x-room.width/2&&point.x<room.x+room.width/2&&point.z>=room.back&&point.z<room.front),'machine rotation leaves the training room');
   let start=station.position;
   for(const end of path){
    const steps=Math.ceil(Math.hypot(end.x-start.x,end.z-start.z)/.2);
@@ -131,6 +132,65 @@ assert(hash('stable-id')===hash('stable-id'),'identity unstable');
 	}
 }
 
+func TestOfficeGymRoutes(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	script := officeGymScript(t, "exercises", "state") + `
+const assert=(condition,message)=>{if(!condition)throw new Error(message);};
+for(const working of [8,32]){
+ const layout=layoutFor({working,question:6,ready:6,review:6,blocked:6}),room=layout.working;
+ const inside=(point,machine)=>Math.abs(point.x-machine.position.x)<2.05&&point.z>=machine.position.z-(machine.kind==='bench-press'?2.6:1.6)&&point.z<=machine.position.z+2.3;
+ const spotters=layout.equipment.map(machine=>({kind:'spotter',equipmentId:machine.id,position:{x:machine.position.x+exercises[machine.kind].spotter.x,z:machine.position.z+exercises[machine.kind].spotter.z}}));
+ const floors=Array.from({length:working},(_,index)=>stationFor(layout,'working',index));
+ const destinations=[...layout.equipment,...spotters,...floors];
+ function verify(start,target,internal=true){
+  const path=stationRoute(layout,start,target),last=path.at(-1)||start;
+  assert(Math.hypot(last.x-target.position.x,last.z-target.position.z)<.01,'route misses its destination');
+  const ignored=new Set(layout.equipment.filter(machine=>inside(start,machine)).map(machine=>machine.id));
+  ignored.add(target.equipmentId||target.id);
+  let cursor=start;
+  for(const end of path){
+   assert(Math.abs(end.x-cursor.x)<.01||Math.abs(end.z-cursor.z)<.01,'route cuts diagonally through bays');
+   const steps=Math.max(1,Math.ceil(Math.hypot(end.x-cursor.x,end.z-cursor.z)/.2));
+   for(let step=0;step<=steps;step++){
+    const point={x:cursor.x+(end.x-cursor.x)*step/steps,z:cursor.z+(end.z-cursor.z)*step/steps};
+    assert(point.x>layout.bounds[0]&&point.x<layout.bounds[2]&&point.z>=layout.bounds[1]&&point.z<layout.bounds[3],'route leaves the gym floor');
+    if(internal)assert(point.x>room.x-room.width/2&&point.x<room.x+room.width/2&&point.z>=room.back&&point.z<room.front,'training trip detours through the hallway');
+    for(const machine of layout.equipment)if(!ignored.has(machine.id))assert(!inside(point,machine),'route crosses '+machine.kind+' from '+JSON.stringify(start)+' to '+JSON.stringify(target));
+   }
+   cursor=end;
+  }
+  return path;
+ }
+ for(const source of destinations)for(const target of destinations)verify(source.position,target);
+ const coaching=stationFor(layout,'question',0);
+ for(const source of layout.equipment)for(const target of layout.equipment){
+  let cursor=source.position;
+  for(const end of stationRoute(layout,cursor,target)){
+   for(const fraction of [.25,.75]){
+    const mid={x:cursor.x+(end.x-cursor.x)*fraction,z:cursor.z+(end.z-cursor.z)*fraction};
+    for(const destination of layout.equipment)verify(mid,destination);
+    verify(mid,coaching,false);
+   }
+   cursor=end;
+  }
+ }
+ for(const target of destinations){
+  verify(coaching.position,target,false);
+  verify(target.position,coaching,false);
+ }
+}
+`
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, node, "--input-type=module", "-e", script)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("gym routes: %v\n%s", err, output)
+	}
+}
+
 func TestOfficeGymMotion(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -169,6 +229,18 @@ for(const {id:equipment} of equipmentExercises)for(let elapsed=0;elapsed<35;elap
 assert(gymPose('question',42,10,{eventAge:1}).routine==='hand-raise','new question is not acknowledged');
 assert(gymPose('ready',42,10,{eventAge:1}).routine==='stretch','completion has no reaction');
 assert(gymPose('working',42,10,{walking:true}).routine==='walk','transition does not walk');
+const walk=gymPose('working',42,10,{walking:true}),run=gymPose('question',42,10,{walking:true,eventAge:4});
+assert(run.routine==='run'&&run.lean>walk.lean&&run.leftElbow<-1,'question travel is not a running gait');
+assert(gymTravelSpeed('question')>=2*gymTravelSpeed('working'),'question travel is not urgent');
+for(const state of ['working','ready','review','blocked','unknown']){
+ assert(gymPose(state,42,10,{walking:true}).routine==='walk','non-question travel started running');
+ assert(gymTravelSpeed(state)===gymTravelSpeed('working'),'ordinary walking speed changed');
+}
+for(let time=0;time<3;time+=.05){
+ const pose=gymPose('question',42,time,{walking:true});
+ for(const value of Object.values(pose))if(typeof value==='number')assert(Number.isFinite(value),'non-finite running pose');
+ assert(gymPose('question',42,time,{still:true}).routine!=='run','question keeps running after arrival or with reduced motion');
+}
 assert(JSON.stringify(gymPose('working',42,10))===JSON.stringify(gymPose('working',42,10)),'animation is nondeterministic');
 `
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -176,6 +248,67 @@ assert(JSON.stringify(gymPose('working',42,10))===JSON.stringify(gymPose('workin
 	command := exec.CommandContext(ctx, node, "--input-type=module", "-e", script)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("gym motion: %v\n%s", err, output)
+	}
+}
+
+func TestOfficeGymLife(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	script := officeGymScript(t, "exercises", "state", "partners", "motion") + `
+const assert=(condition,message)=>{if(!condition)throw new Error(message);};
+assert(todoLoad(undefined)===null,'unavailable todos invent progress');
+for(const [completed,level] of [[0,0],[1,1],[3,3],[99,4],[0,0]])assert(todoLoad({completed}).level===level,'load does not reflect current completed todos');
+const data=gymAgents([
+ {id:'pair:architect',sessionId:'pair',role:'architect',status:'working',todo:{completed:3}},
+ {id:'pair:junior',sessionId:'pair',role:'junior',status:'ready',todo:{completed:1}},
+]);
+assert(todoLoad(data[0].todo).level===3&&todoLoad(data[1].todo).level===1,'partner loads were aggregated');
+const actors=new Map(data.map((data,index)=>[data.id,{data,identity:index,state:agentState(data),position:{x:index?-1.15:0,z:index?.25:0},station:{kind:index?'spotter':'floor'},path:[],arrivedAt:0,rotationAt:10}]));
+const a=actors.get('pair:architect'),b=actors.get('pair:junior');
+updatePartners(actors,.5);
+assert(a.partnerMoment?.type==='plate-handoff'&&b.partnerMoment?.giver,'idle partner does not pass a plate');
+const moment=a.partnerMoment;
+updatePartners(actors,1);
+assert(a.partnerMoment===moment,'polling restarts the handoff');
+for(let time=.5;time<3.3;time+=.05){
+ const pose=gymPose('working',0,time,{partnerMoment:moment});
+ for(const target of pose.handTargets.filter(Boolean))assert(target.every(Number.isFinite),'non-finite handoff target');
+}
+updatePartners(actors,3.4);
+assert(a.carryingPlate&&!b.carryingPlate&&!a.partnerMoment,'plate does not transfer to the lifter');
+updatePartners(actors,4);
+assert(!a.partnerMoment,'handoff repeats during the same rest');
+a.arrivedAt=4;a.carryingPlate=false;updatePartners(actors,4.5);
+assert(a.partnerMoment,'role-swap fixture has no active handoff');
+a.data.spotting=b.data.id;b.data.spotting=null;updatePartners(actors,4.6);
+assert(!a.partnerMoment&&!b.partnerMoment,'role swap leaves a stale handoff');
+a.data.spotting=null;b.data.spotting=a.data.id;
+for(const actor of actors.values()){actor.state='ready';actor.data={...actor.data,status:'ready',spotting:null};actor.position={x:actor===a?-.65:.65,z:0};actor.station={kind:'bench'};}
+a.pendingBump=true;
+updatePartners(actors,5);
+assert(a.partnerMoment?.type==='fist-bump'&&b.partnerMoment?.type==='fist-bump','completion does not pair the celebration');
+assert(!a.pendingBump&&!a.carryingPlate,'completed work retains a plate or repeated celebration');
+const bump=gymPose('ready',0,6,{seated:true,partnerMoment:a.partnerMoment});
+assert(bump.leftHip===-Math.PI/2&&bump.routine==='fist-bump','seated fist bump leaves the bench');
+updatePartners(actors,8);
+assert(!a.partnerMoment&&a.company&&b.company,'partners do not recover together');
+assert(gymPose('ready',0,8,{seated:true,company:a.company}).leftKnee===Math.PI/2,'paired recovery loses seated knees');
+const ordered=recoveryOrder([{id:'alone',status:'ready'},...actors.values()].map(item=>item.data||item));
+assert(ordered[0].id===a.data.id&&ordered[1].id===b.data.id,'recovery separates partners');
+a.pendingBump=true;b.state='unknown';b.data.status='unknown';updatePartners(actors,9);
+assert(!a.partnerMoment&&!a.company,'unknown partner joins an interaction');
+b.state='ready';b.data.status='ready';a.pendingBump=true;updatePartners(actors,10);
+assert(a.partnerMoment,'removal fixture has no active interaction');
+actors.delete(b.data.id);updatePartners(actors,10.5);
+assert(!a.partnerMoment&&!a.company,'removed partner leaves a ghost interaction');
+`
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, node, "--input-type=module", "-e", script)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("gym life: %v\n%s", err, output)
 	}
 }
 

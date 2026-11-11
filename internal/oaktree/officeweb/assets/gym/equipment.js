@@ -6,17 +6,22 @@ export function createTrainingEquipment(art, station, parent) {
   root.position.set(station.position.x,0,station.position.z);root.add(structure);parent.add(root);
   const {iron,edge,dark,gold,woodLight,rubber,cloth}=art;
   const box=(w,h,d,x,y,z,material=iron,group=structure)=>art.box(w,h,d,x,y,z,material,group);
-  const arms=[],up=new T.Vector3(0,1,0);
-  let bar,stack,footplate,roller,cable;
-  function barbell(y,width=2.8){
+  const arms=[],plates=[],weightBlocks=[],up=new T.Vector3(0,1,0);
+  let bar,footplate,roller,cable,selector,loadLevel=0;
+  function loadPlates(group,start){
+    for(let level=0;level<=4;level++){
+      const plate=new T.Group();group.add(plate);
+      for(const side of [-1,1])art.plate(side*(start+level*.16),0,0,level%2?.27:.32,level%2?'#aa8f57':'#506b59',plate);
+      art.batch(plate);plates.push({plate,level});
+    }
+  }
+  function barbell(y,width=3.8){
     const group=new T.Group();root.add(group);group.position.y=y;
     box(width,.055,.055,0,0,0,edge,group);
     for(const side of [-1,1]){
-      art.plate(side*(width/2-.38),0,0,.3,'#506b59',group);
-      art.plate(side*(width/2-.21),0,0,.25,'#aa8f57',group);
       box(.08,.12,.12,side*(width/2-.08),0,0,gold,group);
     }
-    art.batch(group);return group;
+    art.batch(group);loadPlates(group,1.02);return group;
   }
   function seat(z=0){
     box(.75,.14,.72,0,.45,z,cloth);box(.14,.4,.14,0,.24,z);
@@ -26,9 +31,12 @@ export function createTrainingEquipment(art, station, parent) {
   function weights(z=-.9){
     box(.74,1.8,.18,1.1,1.1,z,dark);
     for(const x of [.86,1.34])box(.035,1.8,.035,x,1.2,z+.13,edge);
-    stack=new T.Group();root.add(stack);stack.userData.z=z+.14;
-    for(let i=0;i<7;i++){box(.59,.055,.28,0,i*.065,0,i%2?iron:edge,stack);box(.08,.025,.025,.24,i*.065,.15,gold,stack);}
-    art.batch(stack);
+    for(let i=0;i<7;i++){
+      const block=new T.Group();root.add(block);block.position.set(1.1,.35+i*.065,z+.14);
+      block.userData.restY=block.position.y;
+      box(.59,.055,.28,0,0,0,i%2?iron:edge,block);art.batch(block);weightBlocks.push(block);
+    }
+    selector=box(.2,.035,.035,1.43,.35+6*.065,z+.3,gold,root);
   }
   function frame(height=2.5){
     for(const x of [-.8,.8]){box(.12,height,.12,x,height/2+.15,-.8);box(.22,.08,2,x,.16,0);}
@@ -71,8 +79,8 @@ export function createTrainingEquipment(art, station, parent) {
     }
     footplate=new T.Group();root.add(footplate);
     box(1.45,.85,.12,0,0,0,rubber,footplate);
-    for(const x of [-.95,.95]){box(.35,.08,.08,x,0,0,edge,footplate);art.plate(x,0,0,.32,'#506b59',footplate);}
-    art.batch(footplate);
+    box(3.8,.08,.08,0,0,0,edge,footplate);
+    art.batch(footplate);loadPlates(footplate,.95);
   }else if(kind==='lat-pulldown'){
     seat();frame(2.55);weights(-.95);bar=new T.Group();root.add(bar);
     box(1.5,.06,.06,0,0,0,edge,bar);
@@ -95,6 +103,8 @@ export function createTrainingEquipment(art, station, parent) {
   art.batch(structure);
   const left=new T.Vector3(),right=new T.Vector3(),middle=new T.Vector3();
   function update(actor,pose){
+    if(actor)loadLevel=actor.load.level;
+    for(const {plate,level} of plates)plate.visible=level<=loadLevel;
     if(actor){
       actor.root.updateMatrixWorld(true);
       actor.leftArm.elbow.localToWorld(left.set(0,-.41,.025));actor.rightArm.elbow.localToWorld(right.set(0,-.41,.025));
@@ -108,7 +118,9 @@ export function createTrainingEquipment(art, station, parent) {
         bar.position.set(0,y,kind==='bench-press'?-1.4:kind==='seated-row'?.9:0);bar.rotation.y=0;
       }
     }
-    if(stack)stack.position.set(1.1,.35+(actor?pose.machineLift*.3:0),stack.userData.z);
+    const lift=actor?pose.machineLift*.3:0;
+    weightBlocks.forEach((block,index)=>block.position.y=block.userData.restY+(index>=6-loadLevel?lift:0));
+    if(selector)selector.position.y=.35+(6-loadLevel)*.065+lift;
     for(const arm of arms){
       const hand=actor&&!pose.released?(arm.side<0?left:right):middle.set(arm.side*1.02,1.34,.3);
       arm.grip.position.copy(hand);const direction=hand.clone().sub(arm.hinge);
@@ -129,5 +141,5 @@ export function createTrainingEquipment(art, station, parent) {
       cable.quaternion.setFromUnitVectors(up,direction.normalize());
     }
   }
-  update(null);return {root,update};
+  update(null);return {root,update,get loadLevel(){return loadLevel;}};
 }

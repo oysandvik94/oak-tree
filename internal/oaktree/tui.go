@@ -2217,10 +2217,7 @@ func (m DashboardModel) renderKanbanCard(session Session, selected bool, width i
 		titleText = "● " + titleText
 	}
 	title := truncateMiddle(titleText, titleTextWidth)
-	branch := truncateMiddle(strings.TrimSpace(session.Branch), titleWidth)
-	if branch == "" {
-		branch = "—"
-	}
+	branch := truncateMiddle(sessionContextLabel(session), titleWidth)
 	meta := []string{}
 	prBadge := ""
 	if session.PR != nil && session.PR.Found {
@@ -2989,16 +2986,32 @@ func sessionName(session Session) string {
 	if name := session.DisplayName(); name != "" {
 		return name
 	}
-	return sessionProjectName(session)
+	if branch := strings.TrimSpace(session.Branch); branch != "" {
+		return branch
+	}
+	project := sessionProjectName(session)
+	if session.ID != "" {
+		return project + " · " + session.ID[:min(8, len(session.ID))]
+	}
+	return project
+}
+
+func sessionContextLabel(session Session) string {
+	project := sessionProjectName(session)
+	if branch := strings.TrimSpace(session.Branch); branch != "" {
+		return project + " · " + branch
+	}
+	return project
 }
 
 func sessionDisplayTitle(session Session) string {
-	project := sessionName(session)
-	branch := strings.TrimSpace(session.Branch)
-	if branch == "" {
-		return project
+	if name := session.DisplayName(); name != "" {
+		return name + " · " + sessionContextLabel(session)
 	}
-	return project + " · " + branch
+	if strings.TrimSpace(session.Branch) != "" {
+		return sessionContextLabel(session)
+	}
+	return sessionName(session)
 }
 
 func prStatusMessage(info *PRInfo) string {

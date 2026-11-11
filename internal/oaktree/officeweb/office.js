@@ -1,6 +1,7 @@
 import { createQuestionPanel } from "./questions.js";
 import { advanceBubble, createActivityTracker } from "./activity.js";
 import { agentState, gymAgents, hash } from "./assets/gym/state.js";
+import { placeOverlays, positionOverlay } from "./assets/gym/overlays.js";
 
 const $ = id => document.getElementById(id);
 const canvas = $("office"), stage = $("stage");
@@ -11,7 +12,6 @@ const sourceNames = {task:"CURRENT TASK", session:"CAMPFIRE UPDATE", status:"AGE
 let selectedID, focusPending = false;
 let connected = false, polling = false, pollTimer, view = null, renderingError = "";
 let lastRosterSignature = "", orderedAgents = [], sessionSuffixes = new Map();
-const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const agentColor = id => `hsl(${hash(id)%360} 65% 76%)`;
 const groupColor = group => `hsl(${hash(group.id)%360} 70% 68%)`;
 const fragmentToken = new URLSearchParams(location.hash.slice(1)).get("token");
@@ -311,7 +311,7 @@ function applyState(payload) {
   chatEntries = Array.isArray(payload.history) ? payload.history : [];
   for (const entry of activityTracker.observe(chatEntries)) {
     const actor = actors.get(entry.agentId);
-    if (actor) actor.bubbleQueue.push(entry);
+    if (actor && (entry.source === 'CAMPFIRE UPDATE' || entry.questionId)) actor.bubbleQueue.push(entry);
   }
   renderChatLog();
   $('stage-message').hidden = actors.size > 0;
@@ -349,22 +349,28 @@ async function openSession(id=selectedID) {
 }
 function updateBubbles(now) {
   if(!view)return;
-  const active=orderedAgents.filter(actor=>advanceBubble(actor,now));
-  const visible=new Set();const occupied=[];
-  for(const actor of active) {
-    if(actor.data.id!==view.overlayAgent())continue;
-    const p=view.project(actor.data.id,3.05);
-    if(!p?.visible)continue;
+  const visible=new Set(),items=[];
+  for(const actor of orderedAgents.filter(actor=>advanceBubble(actor,now))) {
+    const anchor=view.project(actor.data.id,2.45);
+    if(!anchor?.visible)continue;
     let node=speechNodes.get(actor.data.id);
-    if(!node){node=document.createElement('button');node.type='button';node.className='speech-bubble';node.dataset.overlayAgent=actor.data.id;const source=document.createElement('span');source.className='bubble-source';const text=document.createElement('span');text.className='bubble-text';node.append(source,text);node.addEventListener('click',()=>{selectActor(actor.data.id);if(actor.bubble?.questionId&&actor.data.questions?.some(q=>q.id===actor.bubble.questionId))questions.open(actor.data);});$('bubbles').append(node);speechNodes.set(actor.data.id,node);}
-    node.children[0].textContent=`${actor.data.name||actor.data.project} · ${actor.data.role||'Agent'}`;node.children[1].textContent=actor.bubble.text;
-    node.title=`${identityLabel(actor.data)} · ${actor.bubble.source}`;
-    node.classList.toggle('selected',actor.data.id===selectedID);
-    const w=node.offsetWidth,h=node.offsetHeight;
-    let x=clamp(p.x,w/2+8,stage.clientWidth-w/2-8),y=clamp(p.y,h+12,stage.clientHeight-10);
-    for(let i=0;i<3&&occupied.some(o=>Math.abs(x-o.x)<(w+o.w)/2&&Math.abs(y-o.y)<Math.max(h,o.h)+10);i++)y=clamp(y-h-15,h+12,stage.clientHeight-10);
-    node.style.left=`${x}px`;node.style.top=`${y}px`;node.hidden=false;visible.add(actor.data.id);occupied.push({x,y,w,h});
+    if(!node){
+      node=document.createElement('button');node.type='button';node.className='speech-bubble';node.dataset.overlayAgent=actor.data.id;
+      const source=document.createElement('span');source.className='bubble-source';source.setAttribute('aria-hidden','true');
+      const text=document.createElement('span');text.className='bubble-text';
+      const stem=document.createElement('span');stem.className='overlay-stem';stem.setAttribute('aria-hidden','true');node.append(source,text,stem);
+      node.addEventListener('click',()=>{selectActor(actor.data.id);if(actor.bubble?.questionId&&actor.data.questions?.some(q=>q.id===actor.bubble.questionId))questions.open(actor.data);});
+      $('bubbles').append(node);speechNodes.set(actor.data.id,node);
+    }
+    if(node.dataset.key!==actor.bubble.key){
+      node.dataset.key=actor.bubble.key;node.children[0].textContent=actor.bubble.questionId?'?':'•';node.children[1].textContent=actor.bubble.text;
+    }
+    node.title=`${identityLabel(actor.data)} · ${actor.bubble.text}`;node.setAttribute('aria-label',node.title);
+    node.classList.toggle('selected',actor.data.id===selectedID);node.classList.toggle('has-question',Boolean(actor.bubble.questionId));
+    node.hidden=false;visible.add(actor.data.id);items.push({node,anchor});
   }
+  const boxes=placeOverlays(items.map(({node,anchor})=>({node,anchor,x:anchor.x,y:anchor.y-node.offsetHeight-10,width:node.offsetWidth,height:node.offsetHeight})),{width:stage.clientWidth,height:stage.clientHeight,occupied:view.overlayBounds(),direction:-1});
+  for(const box of boxes)positionOverlay(box.node,box,box.anchor);
   for(const [id,node] of speechNodes)if(!visible.has(id)){node.remove();speechNodes.delete(id);}
 }
 function showRenderingError(message) {

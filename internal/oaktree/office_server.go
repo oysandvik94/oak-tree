@@ -66,6 +66,7 @@ type officeSnapshot struct {
 	Agents    []officeAgentState    `json:"agents"`
 	UpdatedAt time.Time             `json:"updatedAt"`
 	History   []officeActivityEntry `json:"history"`
+	campfire  []officeActivityEntry
 }
 
 func officeStatus(status AgentStatus) string {
@@ -110,7 +111,10 @@ func officeSnapshotFrom(sessions []Session, posts []CampfireMessage, groups []Co
 			members[assignment.SessionID] = entry
 		}
 	}
+	names := make(map[string]string, len(sessions))
 	for _, session := range sessions {
+		displayName := sessionName(session)
+		names[session.ID] = displayName
 		latest := CampfireMessage{}
 		for _, post := range posts {
 			if post.SourceSessionID == session.ID && post.At.After(latest.At) {
@@ -156,7 +160,7 @@ func officeSnapshotFrom(sessions []Session, posts []CampfireMessage, groups []Co
 			if project == "." || project == string(filepath.Separator) {
 				project = "session"
 			}
-			result.Agents = append(result.Agents, officeAgentState{ID: id, SessionID: session.ID, Project: project, Name: session.DisplayName(), Notes: session.StickyNotes[role], Branch: session.Branch, Role: role, Status: name, SessionState: state, Activity: activity, ActivitySource: source, UpdatedAt: updated.UTC(), Group: group, Todo: todo, PR: session.PR})
+			result.Agents = append(result.Agents, officeAgentState{ID: id, SessionID: session.ID, Project: project, Name: displayName, Notes: session.StickyNotes[role], Branch: session.Branch, Role: role, Status: name, SessionState: state, Activity: activity, ActivitySource: source, UpdatedAt: updated.UTC(), Group: group, Todo: todo, PR: session.PR})
 		}
 		if len(session.Agents) == 0 {
 			add("", session.AgentStatus, session.Todo)
@@ -171,6 +175,13 @@ func officeSnapshotFrom(sessions []Session, posts []CampfireMessage, groups []Co
 			agent := session.Agents[role]
 			add(role, agent.Status, agent.Todo)
 		}
+	}
+	for _, post := range posts {
+		name, present := names[post.SourceSessionID]
+		if !present || post.At.After(now) {
+			continue
+		}
+		result.campfire = append(result.campfire, officeCampfireActivity(post, name))
 	}
 	return result
 }

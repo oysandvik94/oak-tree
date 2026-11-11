@@ -12,7 +12,8 @@ const assert = require('node:assert/strict');
   const browser = await chromium.launch({headless:true, executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined, args:['--no-sandbox','--enable-unsafe-swiftshader']});
   const errors=[], calls=[];
   const now=new Date().toISOString();
-  const make=(id,status,sessionState=status)=>({id,sessionId:id.split(':')[0],project:'sample-project',name:id.split(':')[0],branch:'feature/gym',role:id.split(':')[1]||'architect',status,sessionState,activity:'Integrate the live gym',activitySource:'task',updatedAt:now,notes:[],questions:[],canReply:true,latestAnswer:'The latest answer is ready.',todo:{tasks:[{subject:'Inspect the scene',status:'completed'},{subject:'Integrate the live gym',status:'in_progress'}]},pr:{found:true,number:42,state:'OPEN',checks_state:'success',review_decision:'APPROVED',url:'https://github.com/example/example/pull/42',refreshed_at:now}});
+  const todo=completed=>({total:completed+1,pending:0,in_progress:1,completed,tasks:[...Array.from({length:completed},(_,i)=>({subject:`Finished step ${i+1}`,status:'completed'})),{subject:'Integrate the live gym',status:'in_progress'}]});
+  const make=(id,status,sessionState=status)=>({id,sessionId:id.split(':')[0],project:'sample-project',name:id.split(':')[0],branch:'feature/gym',role:id.split(':')[1]||'architect',status,sessionState,activity:'Integrate the live gym',activitySource:'task',updatedAt:now,notes:[],questions:[],canReply:true,latestAnswer:'The latest answer is ready.',todo:todo(1),pr:{found:true,number:42,state:'OPEN',checks_state:'success',review_decision:'APPROVED',url:'https://github.com/example/example/pull/42',refreshed_at:now}});
   let agents=[make('Atlas:architect','working'),make('Atlas:junior','ready','working'),make('Cedar:architect','question'),make('Fern:architect','ready'),make('Moss:architect','working','review'),make('Sage:architect','ready','blocked'),make('Pine:architect','working'),make('Willow:architect','unknown','working')];
   agents[0].group=agents[6].group={id:'group-one',name:'Actual fixture group'};
   agents[2].questions=[{id:'fixture-question',title:'Choose a direction',source:'tool',questions:[{id:'choice',prompt:'Which direction?',type:'single',options:[{value:'yes',label:'Continue'}]}]}];
@@ -51,9 +52,22 @@ const assert = require('node:assert/strict');
     assert.ok(initialMotion.equipment.some(station=>station.id===initialMotion.positions['Atlas:architect'].stationId));
     assert.equal(initialMotion.positions['Atlas:junior'].station,'spotter');
     assert.equal(initialMotion.positions['Fern:architect'].station,'bench');
+    assert.equal(initialMotion.positions['Atlas:architect'].loadLevel,1);
+    agents[0].todo=todo(3);
+    await page.waitForFunction(()=>window.oakGym.getInfo().positions['Atlas:architect'].loadLevel===3);
+    const loaded=await page.evaluate(()=>window.oakGym.getInfo());
+    assert.equal(loaded.positions['Atlas:junior'].loadLevel,1,'loads must remain role-specific');
+    assert.equal(loaded.equipment.find(station=>station.occupant==='Atlas:architect').loadLevel,3);
+    agents[0].todo=todo(0);
+    await page.waitForFunction(()=>window.oakGym.getInfo().positions['Atlas:architect'].loadLevel===0);
+    assert.equal(await page.evaluate(()=>window.oakGym.getInfo().animationTime),0,'todo progress must update with reduced motion');
+    agents[0].todo=todo(1);
     assert.equal(initialMotion.positions['Moss:architect'].station,'desk');
     assert.equal(await page.locator('.agent-row').count(),8);
-    assert.equal(await page.locator('.gym-agent-label:visible').count(),1,'unfocused labels should be hidden');
+    assert.equal(await page.locator('.gym-agent-label:visible').count(),8,'onscreen labels must not depend on focus');
+    for(const label of await page.locator('.gym-agent-label:visible').all()){
+      const box=await label.boundingBox();assert.ok(box.height<=24&&box.width<=144,'nameplate is not compact');
+    }
     assert.equal(await page.locator('.topbar,.scene-toolbar,.gym-options,#room-navigation,.scene-footer').count(),0);
     const stageBounds=await page.locator('#stage').boundingBox();
     assert.equal(stageBounds.y,0);assert.equal(stageBounds.height,1050);
@@ -62,8 +76,8 @@ const assert = require('node:assert/strict');
     const atlas = (await page.evaluate(()=>window.oakGym.getInfo())).positions['Atlas:architect'].screen;
     const canvasBounds=await page.locator('#office').boundingBox();
     await page.mouse.move(canvasBounds.x+atlas.x,canvasBounds.y+atlas.y);
-    await page.waitForFunction(()=>document.querySelector('.gym-agent-label:not([hidden])')?.dataset.overlayAgent==='Atlas:architect');
-    assert.equal(await page.locator('.gym-agent-label:visible').count(),1,'hover should replace, not add, an overlay');
+    await page.waitForFunction(()=>document.querySelector('.gym-agent-label[data-overlay-agent="Atlas:architect"]:not([hidden])'));
+    assert.equal(await page.locator('.gym-agent-label:visible').count(),8,'hover must not hide other nameplates');
     await page.locator('#office').click({position:{x:atlas.x,y:atlas.y}});
     assert.equal(await page.locator('[data-agent-id="Atlas:architect"]').getAttribute('aria-pressed'),'true','3D raycast selected the wrong agent');
     await page.click('[data-agent-id="Atlas:architect"]');
@@ -77,7 +91,8 @@ const assert = require('node:assert/strict');
     const originalName=agents[0].name;agents[0].name='Atlas refreshed';
     await page.waitForFunction(()=>document.querySelector('[data-agent-id="Atlas:architect"] .agent-name')?.textContent==='Atlas refreshed');
     assert.equal(await page.locator('#inspector').isVisible(),false,'polling should preserve deselection');
-    assert.equal(await page.locator('.gym-agent-label:visible').count(),0,'deselected, unhovered agents should have no overlay');
+    assert.ok(await page.locator('.gym-agent-label:visible').count()>0,'deselection hid permanent nameplates');
+    assert.equal(await page.locator('.gym-agent-label[data-overlay-agent="Atlas:architect"] .label-name').textContent(),'Atlas refreshed');
     agents[0].name=originalName;
     await page.click('[data-agent-id="Atlas:architect"]');
     await page.keyboard.press('Escape');
@@ -91,14 +106,19 @@ const assert = require('node:assert/strict');
     await page.click('#conversation-open');await page.fill('#conversation-reply','A fixture-only reply');await page.click('#conversation-send');await page.waitForFunction(()=>document.querySelector('#conversation-feedback').textContent==='Sent or queued in Pi.');await page.click('#conversation-close');
     await page.click('[data-agent-id="Cedar:architect"]');await page.click('#question-launcher button');await page.check('input[value="yes"]');await page.click('#question-submit');await page.click('#question-close');
     console.log('Focus, notes, replies and question submission checked.');
-    history=[{key:'one',agentId:'Atlas:architect',author:'Atlas',source:'session',text:'A real-shaped Campfire fixture.',time:now}];
+    await page.locator('#office').focus();await page.keyboard.press('Escape');await page.keyboard.press('f');
+    history=[{key:'one',agentId:'Atlas:architect',author:'Atlas',source:'CAMPFIRE UPDATE',text:'A real-shaped Campfire fixture.',time:now}];
     await page.waitForFunction(()=>document.querySelector('#chat-log').textContent.includes('Campfire fixture'));
-    assert.equal(await page.locator('.speech-bubble[data-overlay-agent="Atlas:architect"]').count(),0,'unfocused activity must stay in the sidebar');
-    await page.click('[data-agent-id="Atlas:architect"]');
-    await page.waitForFunction(()=>document.querySelector('.speech-bubble')?.dataset.overlayAgent==='Atlas:architect');
-    assert.equal(await page.locator('.speech-bubble').count(),1);
-    await page.click('[data-agent-id="Cedar:architect"]');
-    await page.waitForFunction(()=>!document.querySelector('.speech-bubble[data-overlay-agent="Atlas:architect"]'));
+    await page.waitForFunction(()=>document.querySelector('.speech-bubble[data-overlay-agent="Atlas:architect"]'));
+    assert.equal(await page.locator('#inspector').isVisible(),false,'Campfire stole selection');
+    const ribbon=await page.locator('.speech-bubble').boundingBox();assert.ok(ribbon.width<=250&&ribbon.height<=42,'Campfire is not a slim ribbon');
+    history.push({key:'two',agentId:'Atlas:junior',author:'Atlas junior',source:'CAMPFIRE UPDATE',text:'Junior has a separate update.',time:now});
+    await page.waitForFunction(()=>document.querySelectorAll('.speech-bubble').length===2);
+    await page.screenshot({path:process.env.OAK_GYM_BUBBLES_SCREENSHOT || '/tmp/oak-gym-notifications.png'});
+    await page.click('[data-agent-id="Cedar:architect"]');await page.locator('#office').focus();await page.keyboard.press('f');
+    await page.waitForFunction(()=>document.querySelector('.speech-bubble[data-overlay-agent="Atlas:architect"]'));
+    await page.waitForFunction(()=>document.querySelectorAll('.speech-bubble').length===0);
+    assert.match(await page.locator('#chat-log').textContent(),/Campfire fixture/,'expired ribbon removed the full log message');
     await page.click('#chat-clear');await page.waitForFunction(()=>document.querySelector('#chat-log').children.length===0);
     agents[0].status='question';
     await page.waitForFunction(()=>window.oakGym.getInfo().positions['Atlas:architect'].state==='question');
@@ -147,10 +167,27 @@ const assert = require('node:assert/strict');
     const before=(await animated.evaluate(()=>window.oakGym.getInfo())).positions['Mobile:architect'];
     agents[0].status='question';
     await animated.waitForFunction(()=>window.oakGym.getInfo().positions['Mobile:architect'].state==='question');
-    await animated.waitForFunction(({x,z})=>{const p=window.oakGym.getInfo().positions['Mobile:architect'];return Math.hypot(p.x-x,p.z-z)>.05;},before);
+    await animated.waitForFunction(({x,z})=>{const p=window.oakGym.getInfo().positions['Mobile:architect'];return p.routine==='run'&&p.moving&&Math.hypot(p.x-x,p.z-z)>.05;},before);
+    const running=await animated.evaluate(async()=>{
+      let last=window.oakGym.getInfo(),distance=0,elapsed=0;
+      while(elapsed<.35){
+        await new Promise(requestAnimationFrame);
+        const info=window.oakGym.getInfo(),p=info.positions['Mobile:architect'],previous=last.positions['Mobile:architect'];
+        if(info.animationTime>last.animationTime){
+          if(p.routine!=='run')throw new Error('Question stopped running before arrival');
+          distance+=Math.hypot(p.x-previous.x,p.z-previous.z);elapsed+=info.animationTime-last.animationTime;
+        }
+        last=info;
+      }
+      return distance/elapsed;
+    });
+    assert.ok(running>4.5&&running<=5.51,`question speed is not a run: ${running}`);
     await animated.locator('#office').focus();await animated.keyboard.press('Space');
     const afterSpace=await animated.evaluate(()=>window.oakGym.getInfo().animationTime);
     await animated.waitForFunction(time=>window.oakGym.getInfo().animationTime>time+.05,afterSpace);
+    // Software WebGL advances the capped animation clock much slower than wall time.
+    await animated.waitForFunction(()=>{const p=window.oakGym.getInfo().positions['Mobile:architect'];return !p.event&&p.routine!=='run';},null,{timeout:45000});
+    assert.equal((await animated.evaluate(()=>window.oakGym.getInfo())).positions['Mobile:architect'].state,'question','running changed the real question state');
     await animated.close();
     // A failed WebGL initialization must not take the functional DOM UI down with it.
     console.log('Normal-motion travel checked; checking WebGL fallback.');
@@ -162,5 +199,9 @@ const assert = require('node:assert/strict');
     const unexpected=errors.filter(e=>!e.includes('503')&&!e.includes('WebGL context')&&!e.includes('Gym rendering unavailable'));
     assert.deepEqual(unexpected,[]);
     console.log('PASS: five zones, equipment reservations, role states, inspector, focus, notes, replies, questions, activity, growth/removal, lighting, offline/recovery, empty/mobile and WebGL fallback. All mutations intercepted.');
-  } catch (error) {console.error('Browser check failed before teardown:',error.message);throw error;} finally {await browser.close();}
+  } catch (error) {
+    console.error('Browser check failed before teardown:',error.message);
+    for(const page of browser.pages())console.error('Movement diagnostic:',await page.evaluate(()=>({clock:window.oakGym?.getInfo().animationTime,positions:window.oakGym?.getInfo().positions,connection:document.getElementById('connection')?.textContent})).catch(()=>null));
+    throw error;
+  } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1,18 +1,19 @@
 import {exercises, trainingSetDuration} from './exercises.js';
 export {trainingSetDuration} from './exercises.js';
+export const gymTravelSpeed = state => state === 'question' ? 5.5 : 2.2;
 
 const lerp = (a, b, amount) => a + (b - a) * amount;
 const smooth = value => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); };
 const routines = {
-  working: ['curls', 'presses', 'squats', 'towel'],
+  working: ['curls', 'presses', 'squats', 'towel', 'chalk-hands'],
   question: ['hand-raise', 'pace', 'look-around'],
-  ready: ['stretch', 'drink', 'pace', 'rest'],
+  ready: ['stretch', 'drink', 'pace', 'rest', 'flex', 'wipe-brow'],
   review: ['read', 'turn-page', 'consider'],
   blocked: ['puzzled', 'pace', 'fold-arms'],
   unknown: ['look-around', 'rest'],
 };
 
-export function gymPose(state, identity, time, {seated = false, desk = false, equipment, equipmentTime = 0, walking = false, still = false, eventAge = Infinity, floorExercise, spotting, reaction} = {}) {
+export function gymPose(state, identity, time, {seated = false, desk = false, equipment, equipmentTime = 0, walking = false, still = false, eventAge = Infinity, floorExercise, spotting, reaction, partnerMoment, company, carryingPlate = null, setup} = {}) {
   const clock = time * (.85 + identity % 11 * .03) + identity % 97 * .19;
   const duration = 14 + (identity >>> 4) % 5;
   const choices = seated ? ['drink', 'seated-stretch', 'rest'] : routines[state] || routines.unknown;
@@ -29,9 +30,14 @@ export function gymPose(state, identity, time, {seated = false, desk = false, eq
     leftKnee: seated ? Math.PI / 2 : 0, rightKnee: seated ? Math.PI / 2 : 0,
     offsetX: 0, facing: 0, stride: 0, weights: false, bottle: false, towel: false,
     clipboard: false, pageTurn: 0, machineLift: 0, handTargets: null, barHeld: false, released: false,
+    plateHand: null, chalk: 0,
   };
   if(reaction){if(exercises[reaction.exercise].equipment)equipment=reaction.exercise;else floorExercise=reaction.exercise;}
   function finish(){
+    if(carryingPlate!==null&&!reaction&&!partnerMoment&&setup===undefined){
+      pose.weights=false;pose.plateHand=carryingPlate;
+      const side=carryingPlate===0?'left':'right';pose[side+'ShoulderX']=-.45;pose[side+'Elbow']=-1.3;
+    }
     if(reaction){
       const phase=Math.max(0,Math.min(1,(time-reaction.startedAt)/reaction.duration));
       exercises[reaction.exercise].events[reaction.type](pose,phase);
@@ -40,20 +46,51 @@ export function gymPose(state, identity, time, {seated = false, desk = false, eq
     return pose;
   }
   function blend(name, value) { pose[name] = lerp(pose[name], value, amount); }
-  function walk(stride) {
-    const step = clock * 6;
+  function walk(stride, running = false) {
+    const step = clock * (running ? 10 : 6);
     pose.stride = stride;
-    pose.bodyY = Math.abs(Math.sin(step)) * .025 * stride;
-    pose.leftHip = Math.sin(step) * .45 * stride;
+    pose.bodyY = Math.abs(Math.sin(step)) * (running ? .09 : .025) * stride;
+    pose.leftHip = Math.sin(step) * (running ? .85 : .45) * stride;
     pose.rightHip = -pose.leftHip;
-    pose.leftKnee = Math.max(0, Math.sin(step)) * .7 * stride;
-    pose.rightKnee = Math.max(0, -Math.sin(step)) * .7 * stride;
-    pose.leftShoulderX = -Math.sin(step) * .4 * stride;
+    pose.leftKnee = Math.max(0, Math.sin(step)) * (running ? 1.35 : .7) * stride;
+    pose.rightKnee = Math.max(0, -Math.sin(step)) * (running ? 1.35 : .7) * stride;
+    pose.leftShoulderX = -Math.sin(step) * (running ? .7 : .4) * stride;
     pose.rightShoulderX = -pose.leftShoulderX;
+    if (running) pose.leftElbow = pose.rightElbow = -1.2;
   }
   if (walking) {
-    pose.routine = 'walk'; pose.lean = .04; walk(1);
+    const running = state === 'question';
+    pose.routine = running ? 'run' : 'walk'; pose.lean = running ? .2 : .04; walk(1,running);
     if (state === 'question' && eventAge < 3) { pose.rightShoulderZ = -2.7; pose.rightElbow = -.4; }
+    return finish();
+  }
+  if(partnerMoment&&!reaction){
+    const phase=Math.max(0,Math.min(1,(time-partnerMoment.startedAt)/partnerMoment.duration));
+    const reach=smooth(phase/.3)*smooth((1-phase)/.3),hand=partnerMoment.hand;
+    pose.routine=partnerMoment.type;pose.headYaw=hand===0?-.5:.5;pose.lean=.04;
+    pose.handTargets=[null,null];
+    pose.handTargets[hand]=[lerp(hand===0?-.43:.43,partnerMoment.target[0],reach),lerp(-.05,partnerMoment.target[1],reach),lerp(.08,partnerMoment.target[2],reach)];
+    if(partnerMoment.type==='plate-handoff'&&(partnerMoment.giver?phase<.5:phase>=.5))pose.plateHand=hand;
+    return finish();
+  }
+  if(setup!==undefined&&!reaction){
+    const hand=carryingPlate??1,side=hand===0?'left':'right';
+    pose.routine=setup<.6?'load-plates':'chalk-hands';pose.released=true;pose.headYaw=hand===0?-.5:.5;
+    if(setup<.6){pose.plateHand=hand;pose[side+'ShoulderZ']=(hand===0?1:-1)*.9;pose[side+'Elbow']=-.7;}
+    else{pose.leftShoulderX=pose.rightShoulderX=-.7;pose.leftShoulderZ=.55;pose.rightShoulderZ=-.55;pose.leftElbow=pose.rightElbow=-1.3;pose.chalk=(setup-.6)/.4;}
+    return finish();
+  }
+  if(company&&!reaction){
+    const phase=company.clock%16;
+    pose.routine=phase<11?'partner-rest':'bottle-toast';pose.headYaw=company.side*(.4+Math.sin(clock*.8)*.08);
+    pose.lean=seated?-.04:.02;pose.leftElbow=-.4;
+    pose.rightElbow=phase<11?-1:-1.8;pose.rightShoulderX=phase<11?-.2:-.65;pose.bottle=phase>=11;
+    if(seated&&phase<2){
+      pose.routine='wipe-bench';pose.towel=true;pose.lean=.17;pose.headPitch=.2;
+      pose.leftShoulderX=-.3;pose.leftElbow=-.2;pose.leftShoulderZ=.4+Math.sin(clock*4)*.25;
+    }else if(!seated&&phase>=8&&phase<11){
+      pose.routine='flex';pose.leftShoulderZ=1.6;pose.rightShoulderZ=-1.6;pose.leftElbow=pose.rightElbow=-2.3;
+    }
     return finish();
   }
   if(spotting){
@@ -75,9 +112,20 @@ export function gymPose(state, identity, time, {seated = false, desk = false, eq
     amount = Math.max(amount, smooth(eventAge / .3) * smooth((3 - eventAge) / .5));
   }
   const lift = .5 + .5 * Math.sin(clock * 2.1);
-  if(state==='working'&&pose.routine!=='towel'&&floorExercise)pose.routine=floorExercise;
+  if(state==='working'&&!['towel','chalk-hands'].includes(pose.routine)&&floorExercise)pose.routine=floorExercise;
   if(exercises[pose.routine]){exercises[pose.routine].sample(pose,{rep:lift,amount});return finish();}
   switch (pose.routine) {
+    case 'chalk-hands':
+      pose.leftShoulderX=pose.rightShoulderX=-.7*amount;pose.leftShoulderZ=.55*amount;pose.rightShoulderZ=-.55*amount;
+      pose.leftElbow=pose.rightElbow=-1.3*amount;pose.chalk=still?0:(clock%3)/1.1;
+      break;
+    case 'flex':
+      blend('leftShoulderZ',1.6);blend('rightShoulderZ',-1.6);
+      blend('leftElbow',-2.3);blend('rightElbow',-2.3);blend('headYaw',Math.sin(clock*.5)*.5);
+      break;
+    case 'wipe-brow':
+      blend('rightShoulderX',-2);blend('rightElbow',-1.3);blend('headPitch',.12);
+      break;
     case 'towel':
       pose.towel = amount > .15;
       blend('leftShoulderX', -1.2);
@@ -160,12 +208,12 @@ export function applyGymPose(model, pose, amount = 1) {
   rotate(model.body, pose.bodyPitch, 0, pose.sway + pose.bodyRoll);
   rotate(model.torso, pose.lean);
   rotate(model.head, pose.headPitch, pose.headYaw);
-  if (pose.handTargets) {
-    // Solve both arm joints so the squat grips stay on the bar, with elbows behind it.
-    const upper = .49, lower = .41;
-    [model.leftArm, model.rightArm].forEach((arm, index) => {
+  [model.leftArm,model.rightArm].forEach((arm,index)=>{
+    const hand=pose.handTargets?.[index],side=index===0?'left':'right';
+    if(hand){
+      const upper=.49,lower=.41;
       const down = arm.shoulder.position.clone().set(0,-1,0);
-      const target = down.clone().fromArray(pose.handTargets[index]).sub(arm.shoulder.position);
+      const target = down.clone().fromArray(hand).sub(arm.shoulder.position);
       const distance = target.length(), direction = target.clone().normalize();
       const reach = (upper ** 2 - lower ** 2 + distance ** 2) / (2 * distance);
       const pole = down.clone().set(0,-1,-.35);
@@ -175,18 +223,22 @@ export function applyGymPose(model, pose, amount = 1) {
       const forearm = target.clone().sub(elbow).applyQuaternion(shoulder.clone().invert()).normalize();
       const joint = arm.elbow.quaternion.clone().setFromUnitVectors(down,forearm);
       arm.shoulder.quaternion.slerp(shoulder,amount); arm.elbow.quaternion.slerp(joint,amount);
-    });
-  } else {
-    rotate(model.leftArm.shoulder, pose.leftShoulderX, 0, pose.leftShoulderZ);
-    rotate(model.rightArm.shoulder, pose.rightShoulderX, 0, pose.rightShoulderZ);
-    rotate(model.leftArm.elbow, pose.leftElbow);
-    rotate(model.rightArm.elbow, pose.rightElbow);
-  }
+    }else{
+      rotate(arm.shoulder,pose[side+'ShoulderX'],0,pose[side+'ShoulderZ']);
+      rotate(arm.elbow,pose[side+'Elbow']);
+    }
+  });
   rotate(model.leftLeg.hip, pose.leftHip);
   rotate(model.rightLeg.hip, pose.rightHip);
   rotate(model.leftLeg.knee, pose.leftKnee);
   rotate(model.rightLeg.knee, pose.rightKnee);
   model.weights.forEach(weight => { weight.visible = pose.weights; });
+  model.plates.forEach((plate,index)=>plate.visible=pose.plateHand===index);
+  model.chalk.visible=pose.chalk>0&&pose.chalk<1;
+  model.chalk.children.forEach((particle,index)=>{
+    particle.position.set(Math.sin(index*2.4)*pose.chalk*.35,pose.chalk*(.3+index*.05),Math.cos(index*2.4)*pose.chalk*.2);
+    particle.scale.setScalar(Math.max(0,1-pose.chalk));
+  });
   model.bottle.visible = pose.bottle;
   model.towel.visible = pose.towel;
   model.clipboard.visible = pose.clipboard;

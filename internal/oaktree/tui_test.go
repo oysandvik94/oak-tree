@@ -1273,7 +1273,7 @@ func TestTruncateMiddle(t *testing.T) {
 func TestSessionNameFallsBackFromRoutingName(t *testing.T) {
 	for _, name := range []string{"", "oak-test-architect", "oak-test-junior"} {
 		session := Session{ID: "test", Root: "/repos/example", Name: name}
-		if got := sessionName(session); got != "example" {
+		if got := sessionName(session); got != "example · test" {
 			t.Errorf("name %q: got %q", name, got)
 		}
 	}

@@ -176,7 +176,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, event AgentEvent) error 
 		_ = SetOakSessionOptions(ctx, s.Exec, session.TmuxSessionID, session.ID, session.LeftPaneID, piPaneID)
 	}
 	if event.Event == "campfire" {
-		return s.appendCampfire(*session, event.ActivityKind, event.ActivityMessage)
+		return s.appendCampfire(*session, event.AgentRole, event.ActivityKind, event.ActivityMessage)
 	}
 	if shouldNotifyQuestion {
 		_ = s.Exec.Run(ctx, "notify-send", "Pi question waiting", agentQuestionNotificationBody(*session))
@@ -273,7 +273,7 @@ func (s *Service) handlePairedAgentEvent(ctx context.Context, session *Session, 
 		_ = SetOakSessionOptions(ctx, s.Exec, session.TmuxSessionID, session.ID, session.LeftPaneID, selectedPane)
 	}
 	if event.Event == "campfire" {
-		return s.appendCampfire(*session, event.ActivityKind, event.ActivityMessage)
+		return s.appendCampfire(*session, event.AgentRole, event.ActivityKind, event.ActivityMessage)
 	}
 	if current == AgentStatusQuestion && previous != AgentStatusQuestion {
 		_ = s.Exec.Run(ctx, "notify-send", "Pi question waiting", agentQuestionNotificationBody(*session))
@@ -319,7 +319,7 @@ func unparkSession(session *Session) {
 	session.TagUpdatedAt = nil
 }
 
-func (s *Service) appendCampfire(session Session, kind, message string) error {
+func (s *Service) appendCampfire(session Session, role, kind, message string) error {
 	return s.Store.UpdateCampfire(func(messages *[]CampfireMessage) error {
 		now := time.Now().UTC()
 		for i := len(*messages) - 1; i >= 0; i-- {
@@ -335,7 +335,7 @@ func (s *Service) appendCampfire(session Session, kind, message string) error {
 			}
 			break
 		}
-		*messages = append(*messages, CampfireMessage{At: now, Kind: kind, Message: message, SourceSessionID: session.ID, Project: sessionProjectName(session)})
+		*messages = append(*messages, CampfireMessage{At: now, Kind: kind, Message: message, SourceSessionID: session.ID, AgentRole: role, Project: sessionProjectName(session)})
 		return nil
 	})
 }
